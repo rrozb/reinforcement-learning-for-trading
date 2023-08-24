@@ -12,9 +12,9 @@ TRAIN_END_DATE = '2021-10-01'
 TRADE_START_DATE = '2021-10-01'
 TRADE_END_DATE = '2023-03-01'
 
-processed_full = pd.read_csv("datasets/processed_full.csv")
-trade = pd.read_csv("datasets/trade.csv", index_col=0)
-train = pd.read_csv("datasets/train.csv", index_col=0)
+processed_full = pd.read_csv("../datasets/processed_full.csv")
+trade = pd.read_csv("../datasets/trade.csv", index_col=0)
+train = pd.read_csv("../datasets/train.csv", index_col=0)
 stock_dimension = len(train.tic.unique())
 state_space = 1 + 2 * stock_dimension + len(INDICATORS) * stock_dimension
 

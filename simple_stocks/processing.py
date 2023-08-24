@@ -15,7 +15,7 @@ from finrl.meta.env_stock_trading.env_stocktrading import StockTradingEnv
 from finrl.meta.preprocessor.preprocessors import data_split
 from stable_baselines3.common.logger import configure
 
-processed = pd.read_csv("datasets/processed_2010-01-01_2023-03-01_DOW.csv")
+processed = pd.read_csv("../datasets/processed_2010-01-01_2023-03-01_DOW.csv")
 
 list_ticker = processed["tic"].unique().tolist()
 list_date = list(pd.date_range(processed['date'].min(), processed['date'].max()).astype(str))
