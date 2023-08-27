@@ -7,11 +7,11 @@ from finrl.config import (
     DATA_SAVE_DIR,
     TRAINED_MODEL_DIR,
     TENSORBOARD_LOG_DIR,
-    RESULTS_DIR,
-    INDICATORS
+    RESULTS_DIR, INDICATORS
 )
 from finrl.main import check_and_make_directories
 from finrl.meta.preprocessor.preprocessors import FeatureEngineer
+from finrl.meta.preprocessor.preprocessors import data_split
 from finrl.meta.preprocessor.yahoodownloader import YahooDownloader
 
 
@@ -52,6 +52,14 @@ def clean_data(path: str, output: str):
     processed_full.to_csv(f"datasets/{output}.csv")
 
 
+def tvt(path: str, out: str, train_start: str, train_end: str, trade_start: str, trade_end: str):
+    processed = pd.read_csv(path)
+    train = data_split(processed, train_start, train_end)
+    trade = data_split(processed, trade_start, trade_end)
+    trade.to_csv(f"datasets/{out}_trade.csv")
+    train.to_csv(f"datasets/{out}_train.csv")
+
+
 if __name__ == "__main__":
 
 
@@ -66,14 +74,20 @@ if __name__ == "__main__":
     TRADE_START_DATE = '2021-10-01'
     TRADE_END_DATE = '2023-03-01'
     #
-    # create_features(
-    #     start_date=TRAIN_START_DATE,
-    #     end_date=TRADE_END_DATE,
-    #     ticker_list=config_tickers.DOW_30_TICKER,
-    #     indicators=INDICATORS,
-    #     save_dir=root/DATA_SAVE_DIR,
-    #     use_vix=True,
-    #     use_turbulence=True
-    # )
+    create_features(
+        start_date=TRAIN_START_DATE,
+        end_date=TRADE_END_DATE,
+        ticker_list=config_tickers.DOW_30_TICKER,
+        indicators=INDICATORS,
+        save_dir=root/DATA_SAVE_DIR,
+        use_vix=True,
+        use_turbulence=True
+    )
     clean_data(path="/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/datasets/processed_2010-01-01_2023-03-01_DOW.csv",
                     output="processed_full")
+    tvt(path="/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/datasets/processed_full.csv",
+        out="full",
+        train_start=TRAIN_START_DATE,
+        train_end=TRAIN_END_DATE,
+        trade_start=TRADE_START_DATE,
+        trade_end=TRADE_END_DATE)
