@@ -1,6 +1,9 @@
 import pandas as pd
+from finrl.agents.stablebaselines3.models import DRLAgent
 from finrl.config import INDICATORS
 from finrl.meta.env_stock_trading.env_stocktrading import StockTradingEnv
+from stable_baselines3.common.logger import configure
+
 
 def create_env(path_in:str):
     data = pd.read_csv(path_in)
@@ -29,9 +32,28 @@ def create_env(path_in:str):
         "reward_scaling": 1e-4
     }
     e_train_gym = StockTradingEnv(df=data, **env_kwargs)
-    env_train, _ = e_train_gym.get_sb_env()
+    env_train, obs_trade = e_train_gym.get_sb_env()
 
-    return env_train
+    return env_train, obs_trade, e_train_gym, env_kwargs
+
+
+def train_model(env, model_name: str, results_dir: str):
+    agent = DRLAgent(env=env)
+    model_a2c = agent.get_model(model_name)
+
+    # set up logger
+    tmp_path = results_dir + '/a2c'
+    new_logger_a2c = configure(tmp_path, ["stdout", "csv", "tensorboard"])
+    # Set new logger
+    model_a2c.set_logger(new_logger_a2c)
+
+    trained_a2c = agent.train_model(model=model_a2c,
+                                    tb_log_name='a2c',
+                                    total_timesteps=50_000)
+
+    trained_a2c.save("trained_models/trained_a2c")
+
 
 if __name__ == '__main__':
-    env = create_env('datasets/full_train.csv')
+    env,_ ,_= create_env('datasets/full_train.csv')
+    train_model(env, 'a2c', 'results')
