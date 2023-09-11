@@ -163,3 +163,4 @@ datasets
 results
 tensorboard_log
 trained_models
+**/data
