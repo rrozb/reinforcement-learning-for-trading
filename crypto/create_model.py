@@ -5,12 +5,12 @@ from finrl.meta.env_stock_trading.env_stocktrading import StockTradingEnv
 from stable_baselines3.common.logger import configure
 
 
-def create_env(path_in:str):
+def create_env(path_in: str):
     data = pd.read_csv(path_in)
-    #FIXME ugly patch to work with index
+    # FIXME ugly patch to work with index
     data = data.drop(columns=['Unnamed: 0'])
-    col = data.columns[0]# INDEX COL, day
-    data = data.rename(columns={col:'days'})
+    col = data.columns[0]  # INDEX COL, day
+    data = data.rename(columns={col: 'days'})
     data.set_index('days', inplace=True)
 
     stock_dimension = len(data.tic.unique())

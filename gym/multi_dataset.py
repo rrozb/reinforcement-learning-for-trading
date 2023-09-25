@@ -27,24 +27,30 @@ env = gym.make(
     verbose=1
     )
 
-envs = gym.vector.make(
-    "MultiDatasetTradingEnv",
-dataset_dir= 'data/*.pkl',
-        preprocess= preprocess,
-    num_envs=3,
-    trading_fees=0.01 / 100,  # 0.01% per stock buy / sell (Binance fees)
-    borrow_interest_rate=0.0003 / 100,  # 0.0003% per timestep (one timestep = 1h here)
-)
+# envs = gym.vector.make(
+#     "MultiDatasetTradingEnv",
+# dataset_dir= 'data/*.pkl',
+#         preprocess= preprocess,
+#     num_envs=3,
+#     trading_fees=0.01 / 100,  # 0.01% per stock buy / sell (Binance fees)
+#     borrow_interest_rate=0.0003 / 100,  # 0.0003% per timestep (one timestep = 1h here)
+# )
 
-model = A2C("MlpPolicy", envs, verbose=1)
-model.learn(total_timesteps=25000)
-model.save("a2c_cartpole")
+# model = A2C("MlpPolicy", env, verbose=1)
+# model.learn(total_timesteps=25000)
+# model.save("a2c_cartpole")
 
-del model # remove to demonstrate saving and loading
-
+# del model # remove to demonstrate saving and loading
+#
 model = A2C.load("a2c_cartpole")
+#
+obs = env.reset()[0]
 
-obs = envs.reset()
-while True:
+for i in range(10_000):
     action, _states = model.predict(obs)
-    obs, rewards, dones, info = envs.step(action)
+    obs, reward, done, info, _ = env.step(action)
+    env.render()
+    if i % 100 == 0:
+        env.reset()
+
+env.save_for_render(dir = "render_logs")
