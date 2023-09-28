@@ -21,18 +21,8 @@ def validate(trade_path,
         environment=e_trade_gym)
     df_result_a2c = df_account_value_a2c.set_index(df_account_value_a2c.columns[0])
     # #baseline stats
-    print("==============Get Baseline Stats===========")
-    # df_dji_ = get_baseline(
-    #     ticker="^DJI",
-    #     start=trade_start_date,
-    #     end=trade_end_date)
-    # stats = backtest_stats(df_dji_, value_col_name='close')
     df_dji = pd.DataFrame()
     df_dji['date'] = df_account_value_a2c['date']
-    # df_dji['account_value'] = df_dji_['close'] / df_dji_['close'][0] * env_kwargs["initial_amount"]
-
-    df_dji = df_dji.set_index(df_dji.columns[0])
-
     result = df_result_a2c
     # result = pd.merge(result, left_index=True, right_index=True)
     result.columns = ['a2c']
