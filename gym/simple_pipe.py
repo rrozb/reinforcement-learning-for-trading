@@ -14,6 +14,33 @@ def create_features(df: pd.DataFrame):
     df["feature_open"] = df["open"] / df["close"]
     df["feature_high"] = df["high"] / df["close"]
     df["feature_low"] = df["low"] / df["close"]
+
+    # Moving Averages
+    df['feature_ma5'] = df['close'].rolling(window=5).mean()
+    df['feature_ma20'] = df['close'].rolling(window=20).mean()
+
+    # Relative Strength Index (RSI)
+    delta = df['close'].diff()
+    dUp, dDown = delta.copy(), delta.copy()
+    dUp[dUp < 0] = 0
+    dDown[dDown > 0] = 0
+
+    RolUp = dUp.rolling(window=14).mean()
+    RolDown = dDown.abs().rolling(window=14).mean()
+
+    RS = RolUp / RolDown
+    df['feature_RSI'] = 100.0 - (100.0 / (1.0 + RS))
+
+    # Moving Average Convergence Divergence (MACD)
+    df['feature_EMA12'] = df['close'].ewm(span=12).mean()
+    df['feature_EMA26'] = df['close'].ewm(span=26).mean()
+    df['feature_MACD'] = df['feature_EMA12'] - df['feature_EMA26']
+
+    # Bollinger Bands
+    df['feature_BB_Middle'] = df['close'].rolling(window=20).mean()
+    df['feature_BB_Upper'] = df['feature_BB_Middle'] + (df['close'].rolling(window=20).std() * 2)
+    df['feature_BB_Lower'] = df['feature_BB_Middle'] - (df['close'].rolling(window=20).std() * 2)
+
     df.dropna(inplace=True)
     return df
 
