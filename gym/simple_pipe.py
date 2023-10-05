@@ -47,7 +47,7 @@ def create_features(df: pd.DataFrame):
 
 def eval(test_df, model, unique_save_dir):
     eval_env = gym.make("TradingEnv",
-                        name="BTCUSD",
+                        name="eval_BTCUSD",
                         df=test_df,
                         positions=[-1, 0, 1],
                         trading_fees=0,
@@ -56,15 +56,17 @@ def eval(test_df, model, unique_save_dir):
 
     eval_vec_env = DummyVecEnv([lambda: eval_env])
     obs = eval_vec_env.reset()
-    done = False
+    done, truncated = (False, False)
 
-    while not done:
+    for i in range(100):
         action, _ = model.predict(obs)
-        obs, reward, done, _ = eval_vec_env.step(action)
+        obs, reward, done, d = eval_vec_env.step(action)
+        truncated = d[0]["TimeLimit.truncated"]
 
-    eval_vec_env.envs[0].save_for_render(dir="unique_save_dir")
+    eval_vec_env.envs[0].get_wrapper_attr('save_for_render')(unique_save_dir)
 
     print(f"Training and evaluation completed. Artifacts saved to {unique_save_dir}")
+
 
 def train_and_save_pipeline(data_path, save_dir):
     # Create a unique directory based on the current timestamp
@@ -79,9 +81,8 @@ def train_and_save_pipeline(data_path, save_dir):
     # add features
     df = create_features(df)
 
-
-    # Split data (e.g., 80% training, 20% testing)
-    train_size = int(0.8 * len(df))
+    # Split data (e.g., 95% training, 5% testing)
+    train_size = int(0.95 * len(df))
     train_df = df[:train_size]
     test_df = df[train_size:]
 
@@ -97,20 +98,20 @@ def train_and_save_pipeline(data_path, save_dir):
     vec_env = DummyVecEnv([lambda: env])
     policy_kwargs = dict(net_arch=[64, 64])
     model = PPO('MlpPolicy', vec_env, policy_kwargs=policy_kwargs, verbose=1)
-    model.learn(total_timesteps=1_000_000)
+    model.learn(total_timesteps=1)
 
     # 3. Saving Artifacts
     # Save model
     model_path = os.path.join(unique_save_dir, "ppo_bitcoin_trader.zip")
     model.save(model_path)
 
-    vec_env.envs[0].save_for_render(dir=unique_save_dir)
+    vec_env.envs[0].get_wrapper_attr('save_for_render')(unique_save_dir)
 
     # # Save historical info
-    # historical_info = env.get_wrapper_attr('historical_info')
-    # historical_info_path = os.path.join(unique_save_dir, "historical_info.pkl")
-    # with open(historical_info_path, 'wb') as f:
-    #     pickle.dump(historical_info, f)
+    historical_info = vec_env.envs[0].get_wrapper_attr('historical_info')
+    historical_info_path = os.path.join(unique_save_dir, "historical_info.pkl")
+    with open(historical_info_path, 'wb') as f:
+        pickle.dump(historical_info, f)
 
     # # Save training data for reproducibility
     # train_data_path = os.path.join(unique_save_dir, "train_data.pkl")
