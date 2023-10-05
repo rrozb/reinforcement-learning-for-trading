@@ -79,8 +79,8 @@ def train_and_save_pipeline(data_path, save_dir):
     # add features
     df = create_features(df)
 
-    # Split data (e.g., 95% training, 5% testing)
-    train_size = int(0.95 * len(df))
+    # Split data (e.g., 90% training, 10% testing)
+    train_size = int(0.90 * len(df))
     train_df = df[:train_size]
     test_df = df[train_size:]
 
@@ -96,7 +96,7 @@ def train_and_save_pipeline(data_path, save_dir):
     vec_env = DummyVecEnv([lambda: env])
     policy_kwargs = dict(net_arch=[64, 64])
     model = PPO('MlpPolicy', vec_env, policy_kwargs=policy_kwargs, verbose=1)
-    model.learn(total_timesteps=1)
+    model.learn(total_timesteps=500_000)
 
     # 3. Saving Artifacts
     # Save model
@@ -110,10 +110,6 @@ def train_and_save_pipeline(data_path, save_dir):
     historical_info_path = os.path.join(unique_save_dir, "historical_info.pkl")
     with open(historical_info_path, 'wb') as f:
         pickle.dump(historical_info, f)
-
-    # # Save training data for reproducibility
-    # train_data_path = os.path.join(unique_save_dir, "train_data.pkl")
-    # train_df.to_pickle(train_data_path)
 
     # do evaluation
     eval(test_df, model, unique_save_dir)
