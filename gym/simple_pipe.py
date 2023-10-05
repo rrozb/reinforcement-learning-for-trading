@@ -2,13 +2,13 @@ import os
 import pickle
 from datetime import datetime
 
-import gymnasium as gym
 import gym_trading_env
+import gymnasium as gym
 import pandas as pd
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv
 
-
+print(gym_trading_env)
 def create_features(df: pd.DataFrame):
     df["feature_close"] = df["close"].pct_change()
     df["feature_open"] = df["open"] / df["close"]
@@ -54,16 +54,14 @@ def eval(test_df, model, unique_save_dir):
                         borrow_interest_rate=0,
                         )
 
-    eval_vec_env = DummyVecEnv([lambda: eval_env])
-    obs = eval_vec_env.reset()
-    done, truncated = (False, False)
+    obs, _ = eval_env.reset()
+    truncated = False
 
-    for i in range(100):
+    while not truncated:
         action, _ = model.predict(obs)
-        obs, reward, done, d = eval_vec_env.step(action)
-        truncated = d[0]["TimeLimit.truncated"]
+        obs, reward, terminated, truncated, done = eval_env.step(action)
 
-    eval_vec_env.envs[0].get_wrapper_attr('save_for_render')(unique_save_dir)
+    eval_env.get_wrapper_attr('save_for_render')(unique_save_dir)
 
     print(f"Training and evaluation completed. Artifacts saved to {unique_save_dir}")
 
