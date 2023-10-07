@@ -6,9 +6,11 @@ import gym_trading_env
 import gymnasium as gym
 import numpy as np
 import pandas as pd
-from gym_trading_env.utils.history import History
 from stable_baselines3 import PPO
+from stable_baselines3.common.callbacks import EvalCallback
 from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.monitor import Monitor
+
 
 print(gym_trading_env)
 def create_features(df: pd.DataFrame):
@@ -47,18 +49,17 @@ def create_features(df: pd.DataFrame):
     return df
 
 
-def custom_reward_function(history, window=252 * 24, risk_free_rate=0.03):
+def custom_reward_function(history, window=252 * 24, risk_free_rate=0.03, non_trade_penalty=0.0002,
+                           consecutive_non_trade_limit=24):
     # Get the portfolio valuations from the history
     portfolio_valuation = history["portfolio_valuation"]
 
     # Handle the first step (where we can't compute returns)
     if len(portfolio_valuation) < 2:
-        return 0  # or any other default value you deem suitable for the first step
+        return 0
 
     # Calculate hourly returns from the portfolio valuation
     returns = np.diff(portfolio_valuation) / portfolio_valuation[:-1]
-
-    # Ensure we only use the latest 'window' returns
     returns = returns[-window:]
 
     # Calculate Sortino ratio for hourly data
@@ -67,19 +68,51 @@ def custom_reward_function(history, window=252 * 24, risk_free_rate=0.03):
     downside_returns = returns[returns < hourly_risk_free_rate]
 
     if len(downside_returns) < 2:
-        downside_std = 0.0001  # Small number to prevent division by zero
+        downside_std = 0.0001
     else:
         downside_std = np.std(downside_returns, ddof=1)
-        downside_std = max(downside_std, 0.0001)  # Small number to prevent division by zero
+        downside_std = max(downside_std, 0.0001)
 
     sortino_ratio = (expected_return - hourly_risk_free_rate) / downside_std
 
-    # Additional logic to ensure the model trades (You can adjust this)
-    recent_positions = history["position_index"][-window:]
-    if len(np.unique(recent_positions)) == 1:
-        sortino_ratio -= 0.0001  # Arbitrary penalty for not trading
+    # Additional logic to encourage trading but allow non-trading in high-risk conditions
+    recent_positions = history["position_index"][-consecutive_non_trade_limit:]
+    if len(np.unique(recent_positions)) == 1 and np.unique(recent_positions)[
+        0] == 0:  # If all recent positions are cash
+        sortino_ratio -= non_trade_penalty
 
     return sortino_ratio
+
+
+def split_data(df: pd.DataFrame, train_size=0.70, valid_size=0.15, test_size=0.15):
+    """
+    Split a dataframe into training, validation, and test sets.
+
+    Parameters:
+    - df: The input dataframe.
+    - train_size: Proportion of the data for the training set.
+    - valid_size: Proportion of the data for the validation set.
+    - test_size: Proportion of the data for the test set.
+
+    Returns:
+    - train_df: Training dataframe.
+    - valid_df: Validation dataframe.
+    - test_df: Test dataframe.
+    """
+
+    # Check if proportions sum to 1
+    assert train_size + valid_size + test_size == 1.0, "Proportions must sum to 1."
+
+    # Calculate the index at which to split the data
+    train_split = int(len(df) * train_size)
+    valid_split = train_split + int(len(df) * valid_size)
+
+    # Split the data
+    train_df = df.iloc[:train_split]
+    valid_df = df.iloc[train_split:valid_split]
+    test_df = df.iloc[valid_split:]
+
+    return train_df, valid_df, test_df
 
 def rolling_zscore(df, window=20):
     mean = df.rolling(window=window).mean()
@@ -132,24 +165,34 @@ def train_and_save_pipeline(data_path, save_dir):
 
 
     # Split data (e.g., 90% training, 10% testing)
-    train_size = int(0.90 * len(df))
-    train_df = df[:train_size]
-    test_df = df[train_size:]
-
+    train_df, eval_df, test_df = split_data(df, train_size=0.7, valid_size=0.15, test_size=0.15)
+    eval_env = Monitor(gym.make("TradingEnv",
+                        name="eval_train",
+                        df=eval_df,  # Your validation dataframe
+                        positions=[-1, 0, 1],
+                        trading_fees=0.01 / 100,
+                        borrow_interest_rate=0.0003 / 100,
+                        reward_function=custom_reward_function,
+                        ))
+    eval_callback = EvalCallback(eval_env,
+                                 best_model_save_path='./logs/best_model',
+                                 log_path='./logs/results',
+                                 eval_freq=5000,  # Evaluate every 5000 steps
+                                 deterministic=True, render=False)
     # 2. Training
-    env = gym.make("TradingEnv",
+    env = Monitor(gym.make("TradingEnv",
                    name="BTCUSD",
                    df=train_df,
                    positions=[-1, 0, 1],
                    trading_fees=0,
                    borrow_interest_rate=0,
                     reward_function=custom_reward_function,
-                   )
+                   ))
 
     vec_env = DummyVecEnv([lambda: env])
     policy_kwargs = dict(net_arch=[64, 64])
-    model = PPO('MlpPolicy', vec_env, policy_kwargs=policy_kwargs, verbose=1)
-    model.learn(total_timesteps=50_000)
+    model = PPO('MlpPolicy', vec_env, policy_kwargs=policy_kwargs, verbose=1, tensorboard_log="./tensorboard_logs/")
+    model.learn(total_timesteps=50_000, callback=eval_callback)
 
     # 3. Saving Artifacts
     # Save model
