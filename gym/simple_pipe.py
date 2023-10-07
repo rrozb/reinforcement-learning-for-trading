@@ -4,7 +4,9 @@ from datetime import datetime
 
 import gym_trading_env
 import gymnasium as gym
+import numpy as np
 import pandas as pd
+from gym_trading_env.utils.history import History
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv
 
@@ -44,6 +46,41 @@ def create_features(df: pd.DataFrame):
     df.dropna(inplace=True)
     return df
 
+
+def custom_reward_function(history, window=252 * 24, risk_free_rate=0.03):
+    # Get the portfolio valuations from the history
+    portfolio_valuation = history["portfolio_valuation"]
+
+    # Handle the first step (where we can't compute returns)
+    if len(portfolio_valuation) < 2:
+        return 0  # or any other default value you deem suitable for the first step
+
+    # Calculate hourly returns from the portfolio valuation
+    returns = np.diff(portfolio_valuation) / portfolio_valuation[:-1]
+
+    # Ensure we only use the latest 'window' returns
+    returns = returns[-window:]
+
+    # Calculate Sortino ratio for hourly data
+    hourly_risk_free_rate = risk_free_rate / (252 * 24)
+    expected_return = np.mean(returns)
+    downside_returns = returns[returns < hourly_risk_free_rate]
+
+    if len(downside_returns) < 2:
+        downside_std = 0.0001  # Small number to prevent division by zero
+    else:
+        downside_std = np.std(downside_returns, ddof=1)
+        downside_std = max(downside_std, 0.0001)  # Small number to prevent division by zero
+
+    sortino_ratio = (expected_return - hourly_risk_free_rate) / downside_std
+
+    # Additional logic to ensure the model trades (You can adjust this)
+    recent_positions = history["position_index"][-window:]
+    if len(np.unique(recent_positions)) == 1:
+        sortino_ratio -= 0.0001  # Arbitrary penalty for not trading
+
+    return sortino_ratio
+
 def rolling_zscore(df, window=20):
     mean = df.rolling(window=window).mean()
     std = df.rolling(window=window).std()
@@ -57,7 +94,8 @@ def eval(test_df, model, unique_save_dir):
                         df=test_df,
                         positions=[-1, 0, 1],
                         trading_fees=0.01 / 100,  # 0.01% per stock buy / sell (Binance fees)
-                        borrow_interest_rate=0.0003 / 100, # 0.0003% per timestep (one timestep = 1h here)
+                        borrow_interest_rate=0.0003 / 100, # 0.0003% per timestep (one timestep = 1h here),
+                        reward_function=custom_reward_function,
                         )
 
     obs, _ = eval_env.reset()
@@ -105,12 +143,13 @@ def train_and_save_pipeline(data_path, save_dir):
                    positions=[-1, 0, 1],
                    trading_fees=0,
                    borrow_interest_rate=0,
+                    reward_function=custom_reward_function,
                    )
 
     vec_env = DummyVecEnv([lambda: env])
     policy_kwargs = dict(net_arch=[64, 64])
     model = PPO('MlpPolicy', vec_env, policy_kwargs=policy_kwargs, verbose=1)
-    model.learn(total_timesteps=2_000_000)
+    model.learn(total_timesteps=50_000)
 
     # 3. Saving Artifacts
     # Save model
