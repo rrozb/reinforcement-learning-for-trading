@@ -44,14 +44,20 @@ def create_features(df: pd.DataFrame):
     df.dropna(inplace=True)
     return df
 
+def rolling_zscore(df, window=20):
+    mean = df.rolling(window=window).mean()
+    std = df.rolling(window=window).std()
+    zscore = (df - mean) / std
+    return zscore
+
 
 def eval(test_df, model, unique_save_dir):
     eval_env = gym.make("TradingEnv",
                         name="eval_BTCUSD",
                         df=test_df,
                         positions=[-1, 0, 1],
-                        trading_fees=0,
-                        borrow_interest_rate=0,
+                        trading_fees=0.01 / 100,  # 0.01% per stock buy / sell (Binance fees)
+                        borrow_interest_rate=0.0003 / 100, # 0.0003% per timestep (one timestep = 1h here)
                         )
 
     obs, _ = eval_env.reset()
@@ -79,6 +85,14 @@ def train_and_save_pipeline(data_path, save_dir):
     # add features
     df = create_features(df)
 
+    # normalize data
+    feature_columns = [col for col in df.columns if col.startswith("feature_")]
+    for col in feature_columns:
+        df[col] = rolling_zscore(df[col])
+
+    df.dropna(inplace=True)
+
+
     # Split data (e.g., 90% training, 10% testing)
     train_size = int(0.90 * len(df))
     train_df = df[:train_size]
@@ -96,7 +110,7 @@ def train_and_save_pipeline(data_path, save_dir):
     vec_env = DummyVecEnv([lambda: env])
     policy_kwargs = dict(net_arch=[64, 64])
     model = PPO('MlpPolicy', vec_env, policy_kwargs=policy_kwargs, verbose=1)
-    model.learn(total_timesteps=500_000)
+    model.learn(total_timesteps=2_000_000)
 
     # 3. Saving Artifacts
     # Save model
