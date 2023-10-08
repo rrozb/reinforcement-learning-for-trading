@@ -2,17 +2,25 @@ import os
 import pickle
 from datetime import datetime
 
-import gym_trading_env
+
 import gymnasium as gym
 import numpy as np
 import pandas as pd
+from gymnasium import register
+# from gym import register
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import EvalCallback
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.monitor import Monitor
+from custom_env import TradingEnv
+
+print(TradingEnv)
+register(
+    id='TradingEnv',  # Unique ID for your environment
+    entry_point='trading_env_gym_custom.custom_env:TradingEnv',  # Change 'path_to_your_module' to the module path of your environment
+)
 
 
-print(gym_trading_env)
 def create_features(df: pd.DataFrame):
     df["feature_close"] = df["close"].pct_change()
     df["feature_open"] = df["open"] / df["close"]
@@ -192,7 +200,7 @@ def train_and_save_pipeline(data_path, save_dir):
     vec_env = DummyVecEnv([lambda: env])
     policy_kwargs = dict(net_arch=[64, 64])
     model = PPO('MlpPolicy', vec_env, policy_kwargs=policy_kwargs, verbose=1, tensorboard_log="./tensorboard_logs/")
-    model.learn(total_timesteps=50_000, callback=eval_callback)
+    model.learn(total_timesteps=100_000, callback=eval_callback)
 
     # 3. Saving Artifacts
     # Save model
