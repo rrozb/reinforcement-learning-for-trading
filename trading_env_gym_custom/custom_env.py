@@ -1,4 +1,5 @@
 #COPIED from https://github.com/ClementPerroud/Gym-Trading-Env/tree/main/src/gym_trading_env/utils
+from typing import io
 
 import gymnasium as gym
 from gymnasium import spaces
@@ -9,12 +10,17 @@ import glob
 from pathlib import Path
 
 from collections import Counter
+
+from matplotlib import pyplot as plt
+
 from trading_env_gym_custom.utils.history import History
 from trading_env_gym_custom.utils.portfolio import Portfolio, TargetPortfolio
 
 import tempfile, os
 import warnings
-from gym.envs.registration import register
+
+from tensorflow.summary import create_file_writer
+import tensorflow as tf
 
 warnings.filterwarnings("error")
 
@@ -107,6 +113,8 @@ class TradingEnv(gym.Env):
         self.name = name
         self.verbose = verbose
 
+        self.writer = create_file_writer("./tensorboard_logs")
+
         self.positions = positions
         self.dynamic_feature_functions = dynamic_feature_functions
         self.reward_function = reward_function
@@ -119,6 +127,7 @@ class TradingEnv(gym.Env):
         assert render_mode is None or render_mode in self.metadata["render_modes"]
         self.max_episode_duration = max_episode_duration
         self.render_mode = render_mode
+        self._resets = 0
         self._set_df(df)
 
         self.action_space = spaces.Discrete(len(positions))
@@ -135,6 +144,31 @@ class TradingEnv(gym.Env):
             )
 
         self.log_metrics = []
+
+    def log(self):
+        with self.writer.as_default():
+            for key, value in self.results_metrics.items():
+                if "%" in value:
+                    value = float(value.replace("%", ""))
+                tf.summary.scalar(name=key, data=value, step=self._step)
+                print(f"{key} : {value}   |   ", end="")
+            print()
+
+    def log_histogram(self, name, data):
+        tensor_data = tf.convert_to_tensor(data, dtype=tf.float32)
+        with self.writer.as_default():
+            tf.summary.histogram(name, tensor_data, step=self._step)
+
+    def log_plot(self, name, data):
+        plt.figure(figsize=(10, 5))
+        plt.plot(data)
+        plt.title(name)
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png')
+        plt.close()
+        buf.seek(0)
+        with self.writer.as_default():
+            tf.summary.image(name, np.expand_dims(plt.imread(buf), 0), step=self._step)
 
     def _set_df(self, df):
         df = df.copy()
@@ -204,6 +238,11 @@ class TradingEnv(gym.Env):
             portfolio_distribution=self._portfolio.get_portfolio_distribution(),
             reward=0,
         )
+        if self._resets > 0:
+            self.log_histogram("Portfolio Valuation", self.historical_info["portfolio_valuation"])
+            self.log()
+
+        self._resets += 1
 
         return self._get_obs(), self.historical_info[0]
 
@@ -408,4 +447,5 @@ class MultiDatasetTradingEnv(TradingEnv):
                 self.next_dataset()
             )
         if self.verbose > 1: print(f"Selected dataset {self.name} ...")
+
         return super().reset(seed)

@@ -185,7 +185,7 @@ def train_and_save_pipeline(data_path, save_dir):
     eval_callback = EvalCallback(eval_env,
                                  best_model_save_path='./logs/best_model',
                                  log_path='./logs/results',
-                                 eval_freq=5000,  # Evaluate every 5000 steps
+                                 eval_freq=20_000,  # Evaluate every 5000 steps
                                  deterministic=True, render=False)
     # 2. Training
     env = Monitor(gym.make("TradingEnv",
@@ -200,7 +200,7 @@ def train_and_save_pipeline(data_path, save_dir):
     vec_env = DummyVecEnv([lambda: env])
     policy_kwargs = dict(net_arch=[64, 64])
     model = PPO('MlpPolicy', vec_env, policy_kwargs=policy_kwargs, verbose=1, tensorboard_log="./tensorboard_logs/")
-    model.learn(total_timesteps=100_000, callback=eval_callback)
+    model.learn(total_timesteps=30_000, callback=eval_callback)
 
     # 3. Saving Artifacts
     # Save model
