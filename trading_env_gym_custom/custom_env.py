@@ -107,13 +107,17 @@ class TradingEnv(gym.Env):
                  max_episode_duration='max',
                  verbose=1,
                  name="Stock",
-                 render_mode="logs"
+                 render_mode="logs",
+                 tensorboard_log_path=None
                  ):
         self.max_episode_duration = max_episode_duration
         self.name = name
         self.verbose = verbose
 
-        self.writer = create_file_writer("./tensorboard_logs")
+        if tensorboard_log_path:
+            self.writer = tf.summary.create_file_writer(tensorboard_log_path)
+        else:
+            self.writer = tf.summary.create_file_writer('./tensorboard_logs/default')
 
         self.positions = positions
         self.dynamic_feature_functions = dynamic_feature_functions
@@ -238,9 +242,9 @@ class TradingEnv(gym.Env):
             portfolio_distribution=self._portfolio.get_portfolio_distribution(),
             reward=0,
         )
-        if self._resets > 0:
-            self.log_histogram("Portfolio Valuation", self.historical_info["portfolio_valuation"])
-            self.log()
+        # if self._resets > 0:
+        #     self.log_histogram("Portfolio Valuation", self.historical_info["portfolio_valuation"])
+        #     self.log()
 
         self._resets += 1
 
@@ -316,6 +320,7 @@ class TradingEnv(gym.Env):
         if done or truncated:
             self.calculate_metrics()
             self.log()
+            self.log_histogram("Portfolio Valuation", self.historical_info["portfolio_valuation"])
         return self._get_obs(), self.historical_info["reward", -1], done, truncated, self.historical_info[-1]
 
     def add_metric(self, name, function):
@@ -336,12 +341,6 @@ class TradingEnv(gym.Env):
     def get_metrics(self):
         return self.results_metrics
 
-    def log(self):
-        if self.verbose > 0:
-            text = ""
-            for key, value in self.results_metrics.items():
-                text += f"{key} : {value}   |   "
-            print(text)
 
     def save_for_render(self, dir="render_logs"):
         assert "open" in self.df and "high" in self.df and "low" in self.df and "close" in self.df, "Your DataFrame needs to contain columns : open, high, low, close to render !"

@@ -91,6 +91,16 @@ def custom_reward_function(history, window=252 * 24, risk_free_rate=0.03, non_tr
 
     return sortino_ratio
 
+def predict_next_sb_log_dir(base_path, prefix="PPO_"):
+    # Ensure the base directory exists.
+    if not os.path.exists(base_path):
+        os.makedirs(base_path)
+
+    existing_dirs = [d for d in os.listdir(base_path) if d.startswith(prefix)]
+    existing_indices = sorted([int(d.replace(prefix, "")) for d in existing_dirs])
+    next_index = existing_indices[-1] + 1 if existing_indices else 1
+    return os.path.join(base_path, prefix + str(next_index))
+
 
 def split_data(df: pd.DataFrame, train_size=0.70, valid_size=0.15, test_size=0.15):
     """
@@ -174,13 +184,19 @@ def train_and_save_pipeline(data_path, save_dir):
 
     # Split data (e.g., 90% training, 10% testing)
     train_df, eval_df, test_df = split_data(df, train_size=0.7, valid_size=0.15, test_size=0.15)
+
+    base_log_path = './tensorboard_logs'
+    predicted_path = predict_next_sb_log_dir(base_log_path)
+    eval_log_path = os.path.join(predicted_path, 'eval')
+
     eval_env = Monitor(gym.make("TradingEnv",
                         name="eval_train",
                         df=eval_df,  # Your validation dataframe
                         positions=[-1, 0, 1],
                         trading_fees=0.01 / 100,
                         borrow_interest_rate=0.0003 / 100,
-                        reward_function=custom_reward_function,
+                        reward_function=custom_reward_function,tensorboard_log_path=eval_log_path,
+
                         ))
     eval_callback = EvalCallback(eval_env,
                                  best_model_save_path='./logs/best_model',
@@ -188,6 +204,7 @@ def train_and_save_pipeline(data_path, save_dir):
                                  eval_freq=20_000,  # Evaluate every 5000 steps
                                  deterministic=True, render=False)
     # 2. Training
+    train_log_path = './tensorboard_logs/PPO_train'
     env = Monitor(gym.make("TradingEnv",
                    name="BTCUSD",
                    df=train_df,
@@ -195,12 +212,13 @@ def train_and_save_pipeline(data_path, save_dir):
                    trading_fees=0,
                    borrow_interest_rate=0,
                     reward_function=custom_reward_function,
+                           tensorboard_log_path=predicted_path
                    ))
 
     vec_env = DummyVecEnv([lambda: env])
     policy_kwargs = dict(net_arch=[64, 64])
-    model = PPO('MlpPolicy', vec_env, policy_kwargs=policy_kwargs, verbose=1, tensorboard_log="./tensorboard_logs/")
-    model.learn(total_timesteps=30_000, callback=eval_callback)
+    model = PPO('MlpPolicy', vec_env, policy_kwargs=policy_kwargs, verbose=1, tensorboard_log=base_log_path)
+    model.learn(total_timesteps=50_000, callback=eval_callback)
 
     # 3. Saving Artifacts
     # Save model
