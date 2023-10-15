@@ -1,6 +1,6 @@
 import gymnasium as gym
 import numpy as np
-from gymnasium import register
+from stable_baselines3 import PPO
 from stable_baselines3.common.monitor import Monitor
 
 from custom_env import TradingEnv
@@ -9,8 +9,7 @@ from trading_env_gym_custom.features_eng import simple_reward
 print(TradingEnv)
 
 
-
-def evaluate_model(model, env, num_episodes=1):
+def evaluate_model(model, env, unique_save_dir=None):
     """
     Evaluate the model's performance.
 
@@ -24,20 +23,21 @@ def evaluate_model(model, env, num_episodes=1):
     """
     total_returns = []
 
-    for i in range(num_episodes):
-        episode_reward = 0
-        truncated = False
-        obs, _ = env.reset()
-        total_log_return = 0
-        while not truncated:
-            action, _states = model.predict(obs, deterministic=True)  # Use deterministic predictions for evaluation
-            obs, reward, done, truncated, historical_info = env.step(action)
-            total_log_return += reward
+    truncated = False
+    obs, _ = env.reset()
+    total_log_return = 0
+    while not truncated:
+        action, _states = model.predict(obs, deterministic=True)  # Use deterministic predictions for evaluation
+        obs, reward, done, truncated, historical_info = env.step(action)
+        total_log_return += reward
 
-        total_return = np.exp(total_log_return) - 1  # Subtracting 1 to get the net return (profit/loss)
-        total_returns.append(total_return)
+    total_return = np.exp(total_log_return) - 1  # Subtracting 1 to get the net return (profit/loss)
+    total_returns.append(total_return)
 
-    mean_total_return = sum(total_returns) / num_episodes
+    mean_total_return = sum(total_returns)
+
+    env.get_wrapper_attr('save_for_render')(unique_save_dir)
+
     return mean_total_return
 
 
@@ -62,3 +62,8 @@ def evaluate_test(test_df, model, unique_save_dir, test_log_path=None, reward_fu
     eval_env.get_wrapper_attr('save_for_render')(unique_save_dir)
 
     print(f"Training and evaluation completed. Artifacts saved to {unique_save_dir}")
+
+
+def load_model(model_path):
+    return PPO.load(model_path)
+

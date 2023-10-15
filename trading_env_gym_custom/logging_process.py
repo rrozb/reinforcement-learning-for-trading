@@ -7,4 +7,4 @@ def predict_next_sb_log_dir(base_path, prefix="PPO_"):
     existing_dirs = [d for d in os.listdir(base_path) if d.startswith(prefix)]
     existing_indices = sorted([int(d.replace(prefix, "")) for d in existing_dirs])
     next_index = existing_indices[-1] + 1 if existing_indices else 1
-    return os.path.join(base_path, prefix + str(next_index))
+    return os.path.join(base_path, prefix + str(next_index)), next_index

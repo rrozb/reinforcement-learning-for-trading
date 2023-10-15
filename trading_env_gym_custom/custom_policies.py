@@ -6,13 +6,13 @@ class CustomMLP(nn.Module):
     def __init__(self, input_dim, output_dim):
         super(CustomMLP, self).__init__()
         self.network = nn.Sequential(
-            nn.Linear(input_dim, 64),
+            nn.Linear(input_dim, 32),
             nn.ReLU(),
-            nn.Dropout(0.5),
-            nn.Linear(64, 64),
+            # nn.Dropout(0.5),
+            nn.Linear(32, 16),
             nn.ReLU(),
-            nn.Dropout(0.5),
-            nn.Linear(64, output_dim)
+            # nn.Dropout(0.5),
+            nn.Linear(16, output_dim)
         )
 
     def forward(self, x):
