@@ -151,10 +151,15 @@ class TradingEnv(gym.Env):
 
     def log(self):
         with self.writer.as_default():
+            #TODO: refactor
             for key, value in self.results_metrics.items():
                 if "%" in value:
                     value = float(value.replace("%", ""))
-                tf.summary.scalar(name=key, data=value, step=self._step)
+                if isinstance(value, str):
+                    tf.summary.text(name=key, data=value, step=self._step)
+                if isinstance(value, float):
+                    tf.summary.scalar(name=key, data=value, step=self._step)
+
                 print(f"{key} : {value}   |   ", end="")
             print()
 
@@ -333,6 +338,8 @@ class TradingEnv(gym.Env):
         self.results_metrics = {
             "Market Return": f"{100 * (self.historical_info['data_close', -1] / self.historical_info['data_close', 0] - 1):5.2f}%",
             "Portfolio Return": f"{100 * (self.historical_info['portfolio_valuation', -1] / self.historical_info['portfolio_valuation', 0] - 1):5.2f}%",
+            "Portfolio Value": f"{self.historical_info['portfolio_valuation', -1]}",
+            "Trade Count": f"{np.count_nonzero(self.historical_info['position'])}",
         }
 
         for metric in self.log_metrics:

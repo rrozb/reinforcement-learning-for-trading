@@ -1,11 +1,19 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
+from sklearn.preprocessing import StandardScaler
+
 
 def create_features(df: pd.DataFrame):
     df["feature_close"] = df["close"].pct_change()
     df["feature_open"] = df["open"] / df["close"]
     df["feature_high"] = df["high"] / df["close"]
     df["feature_low"] = df["low"] / df["close"]
+
+    df["feature_volume"] = df["volume"].pct_change()
+    df["feature_volume"] = df["feature_volume"].fillna(0)
+
+
+    df["feature_volume_raw"] = df["volume"]
 
     # Moving Averages
     df['feature_ma5'] = df['close'].rolling(window=5).mean()
@@ -32,9 +40,10 @@ def create_features(df: pd.DataFrame):
     df['feature_BB_Middle'] = df['close'].rolling(window=20).mean()
     df['feature_BB_Upper'] = df['feature_BB_Middle'] + (df['close'].rolling(window=20).std() * 2)
     df['feature_BB_Lower'] = df['feature_BB_Middle'] - (df['close'].rolling(window=20).std() * 2)
-
+    df.replace([np.inf, -np.inf], np.nan, inplace=True)
     df.dropna(inplace=True)
     return df
+
 
 def simple_reward(history):
     portfolio_valuation = history["portfolio_valuation"]
@@ -44,6 +53,7 @@ def simple_reward(history):
     log_return = np.log(portfolio_valuation[-1] / portfolio_valuation[-2])
     return log_return
     # return (portfolio_valuation[-1] - portfolio_valuation[-2]) / portfolio_valuation[-2]
+
 
 def custom_reward_function(history, window=252 * 24, risk_free_rate=0.03, non_trade_penalty=0.0002,
                            consecutive_non_trade_limit=24):
@@ -79,6 +89,7 @@ def custom_reward_function(history, window=252 * 24, risk_free_rate=0.03, non_tr
 
     return sortino_ratio
 
+
 def split_data(df: pd.DataFrame, train_size=0.70, valid_size=0.15, test_size=0.15):
     """
     Split a dataframe into training, validation, and test sets.
@@ -109,11 +120,13 @@ def split_data(df: pd.DataFrame, train_size=0.70, valid_size=0.15, test_size=0.1
 
     return train_df, valid_df, test_df
 
+
 def rolling_zscore(df, window=20):
     mean = df.rolling(window=window).mean()
     std = df.rolling(window=window).std()
     zscore = (df - mean) / std
     return zscore
+
 
 def get_tvt(data_path):
     # 1. Preparation
@@ -132,3 +145,15 @@ def get_tvt(data_path):
     train_df, eval_df, test_df = split_data(df, train_size=0.9, valid_size=0.05, test_size=0.05)
 
     return train_df, eval_df, test_df
+
+
+def scale_features(df: pd.DataFrame, scaler=None):
+    # Instantiate the scaler
+    if scaler is None:
+        scaler = StandardScaler()
+
+    # Select only the feature columns
+    feature_columns = [col for col in df.columns if 'feature_' in col]
+    df[feature_columns] = scaler.fit_transform(df[feature_columns])
+
+    return df, scaler
