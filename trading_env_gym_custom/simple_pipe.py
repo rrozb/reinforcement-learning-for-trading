@@ -1,5 +1,4 @@
 import os
-import pickle
 import random
 from datetime import datetime
 
@@ -15,8 +14,8 @@ from stable_baselines3.common.vec_env import DummyVecEnv
 
 from custom_env import TradingEnv
 from trading_env_gym_custom.custom_policies import CustomPolicy
-from trading_env_gym_custom.evaluation import evaluate_test, load_model, evaluate_model
-from trading_env_gym_custom.features_eng import create_features, split_data, simple_reward, rolling_zscore
+from trading_env_gym_custom.evaluation import load_model, evaluate_model
+from trading_env_gym_custom.features_eng import create_features, split_data, simple_reward, rolling_zscore, CustomScaler
 from trading_env_gym_custom.logging_process import predict_next_sb_log_dir
 
 print(TradingEnv)
@@ -35,20 +34,42 @@ def set_seeds(seed):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-def get_data(data_path, train_size=0.8, valid_size=0.15, test_size=0.05):
+
+def process_data(data_path, train_size=0.8, valid_size=0.15, test_size=0.05):
     df = pd.read_pickle(data_path)
+
     # add features
     df = create_features(df)
 
-    # normalize data
+    # Split data first to avoid data leakage during normalization
+    train_df, eval_df, test_df = split_data(df, train_size=train_size, valid_size=valid_size, test_size=test_size)
+
+    # normalize data with CustomScaler
     feature_columns = [col for col in df.columns if col.startswith("feature_")]
-    for col in feature_columns:
-        df[col] = rolling_zscore(df[col])
+    scaler = CustomScaler()
+    train_df.loc[:, feature_columns] = scaler.fit_transform(train_df[feature_columns])
+    eval_df.loc[:, feature_columns] = scaler.transform(eval_df[feature_columns])
+    test_df.loc[:, feature_columns] = scaler.transform(test_df[feature_columns])
 
-    df.dropna(inplace=True)
+    # Extract base name and directory from data_path
+    base_name = os.path.splitext(os.path.basename(data_path))[0]
+    directory = os.path.dirname(data_path)
+    save_folder = os.path.join(directory, base_name)
 
-    # Split data (e.g., 90% training, 10% testing)
-    return  split_data(df, train_size=train_size, valid_size=valid_size, test_size=test_size)
+    # Create folder if it doesn't exist
+    if not os.path.exists(save_folder):
+        os.makedirs(save_folder)
+
+    # Save data splits
+    train_df.to_pickle(os.path.join(save_folder, "train.pkl"))
+    eval_df.to_pickle(os.path.join(save_folder, "eval.pkl"))
+    test_df.to_pickle(os.path.join(save_folder, "test.pkl"))
+
+    # Save the scaler for future use
+    scaler.save(os.path.join(save_folder, "scaler.pkl"))
+
+    return train_df, eval_df, test_df
+
 
 def create_envs(train_df, eval_df, test_df, eval_log_path, test_log_path, train_log_path):
     eval_env = Monitor(gym.make("TradingEnv",
@@ -180,4 +201,7 @@ set_seeds(42)
 
 # Example usage
 # train_and_save_pipeline('data/binance-BTCUSDT-1h.pkl', '../training_results')
-evaluate_with_retrain('/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/logs/26/best_model.zip', 'data/binance-BTCUSDT-1h.pkl', 'training_results/testtest')
+# evaluate_with_retrain('/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/logs/26/best_model.zip', 'data/binance-BTCUSDT-1h.pkl', 'training_results/testtest')
+
+process_data("/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h_2015-2023.pkl",
+             train_size=0.8, valid_size=0.15, test_size=0.05)

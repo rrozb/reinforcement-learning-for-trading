@@ -1,11 +1,51 @@
 import pandas as pd
 import numpy as np
-
+from sklearn.preprocessing import StandardScaler
+import os
+import joblib
 def create_features(df: pd.DataFrame):
+    df['feature_hour'] = df.index.hour
+    df['feature_dayofweek'] = df.index.dayofweek
+    df['feature_month'] = df.index.month
+    df['feature_year'] = df.index.year
+    df['feature_dayofyear'] = df.index.dayofyear
+
     df["feature_close"] = df["close"].pct_change()
     df["feature_open"] = df["open"] / df["close"]
     df["feature_high"] = df["high"] / df["close"]
     df["feature_low"] = df["low"] / df["close"]
+
+
+    df['feature_return_1h'] = df['close'].pct_change(1)
+    # Past 24-hour return
+    df['feature_return_24h'] = df['close'].pct_change(24)
+
+    df['feature_volatility_24h'] = df['feature_close'].rolling(window=24).std()
+
+    mean_close = df['close'].rolling(window=24).mean()
+    std_close = df['close'].rolling(window=24).std()
+    df['feature_large_swing'] = ((df['close'] - mean_close).abs() > 2.5 * std_close).astype(int)
+
+    short_window = 24  # One day (assuming hourly data)
+    long_window = 24 * 7  # One week
+
+    df['feature_short_MA'] = df['close'].rolling(window=short_window).mean()
+    df['feature_long_MA'] = df['close'].rolling(window=long_window).mean()
+
+    df['feature_market_trend'] = np.where(df['feature_short_MA'] > df['feature_long_MA'], 1,
+                                          np.where(df['feature_short_MA'] < df['feature_long_MA'], -1, 0))
+
+    df['feature_resistance'] = df['high'].rolling(window=48).max()
+    df['feature_support'] = df['low'].rolling(window=48).min()
+
+    df['feature_distance_from_resistance'] = df['close'] - df['feature_resistance']
+    df['feature_distance_from_support'] = df['close'] - df['feature_support']
+
+    low_min = df['low'].rolling(window=14).min()
+    high_max = df['high'].rolling(window=14).max()
+
+    df['feature_stochastic_oscillator'] = 100 * ((df['close'] - low_min) / (high_max - low_min))
+
 
     # Moving Averages
     df['feature_ma5'] = df['close'].rolling(window=5).mean()
@@ -132,3 +172,27 @@ def get_tvt(data_path):
     train_df, eval_df, test_df = split_data(df, train_size=0.9, valid_size=0.05, test_size=0.05)
 
     return train_df, eval_df, test_df
+
+
+class CustomScaler:
+    def __init__(self):
+        self.scaler = StandardScaler()
+
+    def fit(self, data):
+        self.scaler.fit(data)
+
+    def transform(self, data):
+        return self.scaler.transform(data)
+
+    def inverse_transform(self, data):
+        return self.scaler.inverse_transform(data)
+
+    def fit_transform(self, data):
+        self.fit(data)
+        return self.transform(data)
+
+    def save(self, filename):
+        joblib.dump(self.scaler, filename)
+
+    def load(self, filename):
+        self.scaler = joblib.load(filename)
