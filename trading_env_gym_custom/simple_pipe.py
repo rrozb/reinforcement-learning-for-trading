@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import torch
 from gymnasium import register
-from stable_baselines3 import PPO
+from stable_baselines3 import PPO, DQN
 from stable_baselines3.common.callbacks import EvalCallback
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
@@ -71,14 +71,14 @@ def process_data(data_path, train_size=0.8, valid_size=0.15, test_size=0.05):
     return train_df, eval_df, test_df
 
 
-def create_envs(train_df, eval_df, test_df, eval_log_path, test_log_path, train_log_path):
+def create_envs(train_df, eval_df, test_df):
     eval_env = Monitor(gym.make("TradingEnv",
                                 name="eval_train",
                                 df=eval_df,  # Your validation dataframe
                                 positions=[-1, 0, 1],
                                 trading_fees=0.01 / 100,
                                 borrow_interest_rate=0.0003 / 100,
-                                reward_function=simple_reward, tensorboard_log_path=eval_log_path,
+                                reward_function=simple_reward,
 
                                 ))
     train_env = Monitor(gym.make("TradingEnv",
@@ -87,8 +87,7 @@ def create_envs(train_df, eval_df, test_df, eval_log_path, test_log_path, train_
                            positions=[-1, 0, 1],
                            trading_fees=0,
                            borrow_interest_rate=0,
-                           reward_function=simple_reward,
-                           tensorboard_log_path=train_log_path
+                           reward_function=simple_reward
                            ))
 
     test_env = Monitor(gym.make("TradingEnv",
@@ -97,101 +96,86 @@ def create_envs(train_df, eval_df, test_df, eval_log_path, test_log_path, train_
                                 positions=[-1, 0, 1],
                                 trading_fees=0.01 / 100,  # 0.01% per stock buy / sell (Binance fees)
                                 borrow_interest_rate=0.0003 / 100,  # 0.0003% per timestep (one timestep = 1h here),
-                                reward_function=simple_reward,
-                                tensorboard_log_path=test_log_path
+                                reward_function=simple_reward
                                 ))
 
     return train_env, eval_env, test_env
-def train_and_save_pipeline(data_path, save_dir):
+
+
+def train_and_save_pipeline(data_dir, save_dir):
     # Create a unique directory based on the current timestamp
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     unique_save_dir = os.path.join(save_dir, f'run_{timestamp}')
-
+    model_class = PPO
+    #PPO Spefific hyperparams
+    hyperparams = {
+        'learning_rate': 2.5e-5,
+        'n_steps': 2048,
+        'batch_size': 64,
+        'n_epochs': 10,
+        'gamma': 0.99,
+        'gae_lambda': 0.95,
+        'clip_range': 0.2,
+        'ent_coef': 0.01,
+        'vf_coef': 0.5,
+        'max_grad_norm': 0.5,
+        # 'use_sde': True,
+        # 'sde_sample_freq': 5
+    }
     if not os.path.exists(unique_save_dir):
         os.makedirs(unique_save_dir)
 
-    # 1. Preparation
-    df = pd.read_pickle(data_path)
-    # add features
-    df = create_features(df)
+    # Load data
+    train_df = pd.read_pickle(os.path.join(data_dir, "train.pkl"))
+    eval_df = pd.read_pickle(os.path.join(data_dir, "eval.pkl"))
+    test_df = pd.read_pickle(os.path.join(data_dir, "test.pkl"))
 
-    # normalize data
-    feature_columns = [col for col in df.columns if col.startswith("feature_")]
-    for col in feature_columns:
-        df[col] = rolling_zscore(df[col])
+    # Create environments
+    train_env, eval_env, _ = create_envs(train_df, eval_df, test_df)
 
-    df.dropna(inplace=True)
+    base_log_path = f'./tensorboard_logs/{model_class.__name__}/{timestamp}/'
 
-
-    # Split data (e.g., 90% training, 10% testing)
-    train_df, eval_df, test_df = get_data(data_path)
-
-    base_log_path = './tensorboard_logs'
-    predicted_path, next_index = predict_next_sb_log_dir(base_log_path)
-    eval_log_path = os.path.join(predicted_path, 'eval')
-    test_log_path = os.path.join(predicted_path, 'test')
-
-    env, eval_env, _ = create_envs(train_df, eval_df, test_df, eval_log_path, test_log_path, predicted_path)
     eval_callback = EvalCallback(eval_env,
-                                 best_model_save_path=f'./logs/{next_index}',
-                                 log_path=f'./logs/results/{next_index}',
-                                 eval_freq=len(train_df),
+                                 best_model_save_path=os.path.join(unique_save_dir, "best_model"),
+                                 log_path=os.path.join(unique_save_dir, "results"),
+                                 eval_freq=20_000,
                                  deterministic=True, render=False)
     # 2. Training
-    # train_log_path = './tensorboard_logs/PPO_train'
-
-    model, vec_env = train_model(env, base_log_path, eval_callback, total_timesteps=1_000_000)
-
-    # 3. Saving Artifacts
-    # Save model
-    model_path = os.path.join(unique_save_dir, "ppo_bitcoin_trader.zip")
-    model.save(model_path)
-
-    vec_env.envs[0].get_wrapper_attr('save_for_render')(unique_save_dir)
-
-    # # Save historical info
-    # historical_info = vec_env.envs[0].get_wrapper_attr('historical_info')
-    # historical_info_path = os.path.join(unique_save_dir, "historical_info.pkl")
-    # with open(historical_info_path, 'wb') as f:
-    #     pickle.dump(historical_info, f)
-    #
-    # # do evaluation
-    # evaluate_test(test_df, model, unique_save_dir, test_log_path)
-
-    print(f"Training completed. Artifacts saved to {unique_save_dir}")
+    model = model_class('MlpPolicy', train_env, verbose=1, **hyperparams, tensorboard_log=base_log_path)
+    model.learn(total_timesteps=1_000_000, callback=eval_callback)
 
 
-def train_model(env, base_log_path, eval_callback, total_timesteps=300_000):
-    # Create the environment
+# def train_model(env, base_log_path, eval_callback, total_timesteps=300_000):
+#     # Create the environment
+#
+#     vec_env = DummyVecEnv([lambda: env])
+#     CLIP_EPSILON = 0.2  # Adjust this as needed
+#     ENTROPY_COEFF = 0.01  # Adjust this as needed
+#     # Initialize the model with the custom policy
+#     model = PPO(CustomPolicy, vec_env, verbose=1, tensorboard_log=base_log_path, clip_range=CLIP_EPSILON,
+#                 ent_coef=ENTROPY_COEFF)
+#
+#     # Train the model
+#     model.learn(total_timesteps=total_timesteps, callback=eval_callback)
+#
+#     return model, vec_env #FIXME: do i need it?
 
-    vec_env = DummyVecEnv([lambda: env])
-    CLIP_EPSILON = 0.2  # Adjust this as needed
-    ENTROPY_COEFF = 0.01  # Adjust this as needed
-    # Initialize the model with the custom policy
-    model = PPO(CustomPolicy, vec_env, verbose=1, tensorboard_log=base_log_path, clip_range=CLIP_EPSILON,
-                ent_coef=ENTROPY_COEFF)
-
-    # Train the model
-    model.learn(total_timesteps=total_timesteps, callback=eval_callback)
-
-    return model, vec_env #FIXME: do i need it?
-
-def evaluate_with_retrain(model_path, data_path, unique_save_dir=None):
-    model = load_model(model_path=model_path)
-    train_df, eval_df, test_df = get_data(data_path)
-    _, env_eval, test_env = create_envs(train_df, eval_df, test_df, None, None, None)
-    evaluate_model(model, env_eval, unique_save_dir)
-    evaluate_model(model, test_env, unique_save_dir)
-
-    E = 2
-    len_df_eval = len(eval_df)
-    vec_env = DummyVecEnv([lambda: env_eval])
-    model.env = vec_env
-    model.learn(total_timesteps=len_df_eval*E)
-    print("Evaluating EVAL env after retrain")
-    evaluate_model(model, env_eval, unique_save_dir)
-    print("Evaluating TEST env after retrain")
-    evaluate_model(model, test_env, unique_save_dir)
+# def evaluate_with_retrain(model_path, data_path, unique_save_dir=None):
+#     model = load_model(model_path=model_path)
+#     train_df, eval_df, test_df = get_data(data_path)
+#     _, env_eval, test_env = create_envs(train_df, eval_df, test_df, None, None, None)
+#     evaluate_model(model, env_eval, unique_save_dir)
+#     evaluate_model(model, test_env, unique_save_dir)
+#
+#     E = 2
+#     len_df_eval = len(eval_df)
+#     vec_env = DummyVecEnv([lambda: env_eval])
+#     model.env = vec_env
+#     model.learn(total_timesteps=len_df_eval*E)
+#     print("Evaluating EVAL env after retrain")
+#     evaluate_model(model, env_eval, unique_save_dir)
+#     print("Evaluating TEST env after retrain")
+#     evaluate_model(model, test_env, unique_save_dir)
 
 
 
@@ -204,4 +188,7 @@ set_seeds(42)
 # evaluate_with_retrain('/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/logs/26/best_model.zip', 'data/binance-BTCUSDT-1h.pkl', 'training_results/testtest')
 
 process_data("/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h_2015-2023.pkl",
-             train_size=0.8, valid_size=0.15, test_size=0.05)
+             train_size=0.97, valid_size=0.02, test_size=0.01)
+
+train_and_save_pipeline('/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h_2015-2023',
+'/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results')

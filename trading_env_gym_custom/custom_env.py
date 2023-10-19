@@ -1,26 +1,21 @@
 #COPIED from https://github.com/ClementPerroud/Gym-Trading-Env/tree/main/src/gym_trading_env/utils
+import datetime
+import glob
+import os
+import warnings
+from pathlib import Path
 from typing import io
 
 import gymnasium as gym
-from gymnasium import spaces
-import pandas as pd
 import numpy as np
-import datetime
-import glob
-from pathlib import Path
-
-from collections import Counter
-
+import pandas as pd
+import tensorflow as tf
+from gymnasium import spaces
 from matplotlib import pyplot as plt
+from tensorflow.summary import create_file_writer
 
 from trading_env_gym_custom.utils.history import History
-from trading_env_gym_custom.utils.portfolio import Portfolio, TargetPortfolio
-
-import tempfile, os
-import warnings
-
-from tensorflow.summary import create_file_writer
-import tensorflow as tf
+from trading_env_gym_custom.utils.portfolio import TargetPortfolio
 
 warnings.filterwarnings("error")
 
@@ -35,6 +30,64 @@ def dynamic_feature_last_position_taken(history):
 
 def dynamic_feature_real_position(history):
     return history['real_position', -1]
+
+
+def calculate_daily_returns(data):
+    return np.diff(data) / data[:-1]
+
+
+def calculate_sharpe_ratio(returns, risk_free_rate=0.0):
+    mean_return = np.mean(returns)
+    std_return = np.std(returns)
+    return (mean_return - risk_free_rate) / std_return
+
+
+def calculate_sortino_ratio(returns, risk_free_rate=0.0):
+    mean_return = np.mean(returns)
+    negative_std_return = np.std(returns[returns < 0])
+    return (mean_return - risk_free_rate) / negative_std_return
+
+
+
+
+
+
+
+
+
+def calculate_metrics(historical_info):
+    # Convert data into DataFrame
+    df = pd.DataFrame({
+        'position': historical_info["position"],
+        'portfolio_valuation': historical_info["portfolio_valuation"]
+    })
+
+    # Calculate daily portfolio change
+    df['portfolio_change'] = df['portfolio_valuation'].pct_change()
+
+    # Determine trades
+    df['trade'] = (df['position'] != 0).astype(int)
+    number_of_trades = df['trade'].sum()
+
+    # Calculate metrics
+    max_drawdown = df['portfolio_valuation'].div(df['portfolio_valuation'].cummax()).subtract(1).min()
+
+    # Using 'portfolio_change' to calculate winning trades
+    winning_trades = df[df['trade'] == 1]['portfolio_change'].gt(0).sum()
+    total_trades = df[df['trade'] == 1]['portfolio_change'].count()
+    winning_trade_percentage = (winning_trades / total_trades) * 100 if total_trades != 0 else 0
+
+    # Average Win Size
+    average_win_size = df[df['portfolio_change'].gt(0)]['portfolio_change'].mean() * 100
+
+    results_metrics = {
+        "Number of Trades Made": str(number_of_trades),
+        "Max Drawdown": f"{max_drawdown * 100:.2f}%",
+        "Winning Trade Percentage": f"{winning_trade_percentage:.2f}%",
+        "Average Win Size in Pct": f"{average_win_size:.2f}%"
+    }
+
+    return results_metrics
 
 
 class TradingEnv(gym.Env):
@@ -133,6 +186,8 @@ class TradingEnv(gym.Env):
         self.render_mode = render_mode
         self._resets = 0
         self._set_df(df)
+        # TODO: parameterize this
+        self.annualization_factor = np.sqrt(24 * 365)
 
         self.action_space = spaces.Discrete(len(positions))
         self.observation_space = spaces.Box(
@@ -150,13 +205,14 @@ class TradingEnv(gym.Env):
         self.log_metrics = []
 
     def log(self):
-        with self.writer.as_default():
-            for key, value in self.results_metrics.items():
-                if "%" in value:
-                    value = float(value.replace("%", ""))
-                tf.summary.scalar(name=key, data=value, step=self._step)
-                print(f"{key} : {value}   |   ", end="")
-            print()
+        # with self.writer.as_default():
+        for key, value in self.results_metrics.items():
+            if "%" in value:
+                value = float(value.replace("%", ""))
+                # tf.summary.scalar(name=key, data=value, step=self._step)
+            print(f"{key} : {value}   |   ", end="")
+        print("\n")
+
 
     def log_histogram(self, name, data):
         tensor_data = tf.convert_to_tensor(data, dtype=tf.float32)
@@ -330,9 +386,25 @@ class TradingEnv(gym.Env):
         })
 
     def calculate_metrics(self):
+
+        market_returns = calculate_daily_returns(self.historical_info["data_close"])
+        portfolio_returns = calculate_daily_returns(self.historical_info['portfolio_valuation'].astype(float))
+
+        # Annualization factor for hourly data (assuming 24/7 market like crypto)
+
+        # Calculating the metrics
+        sharpe = calculate_sharpe_ratio(portfolio_returns) * self.annualization_factor
+        sortino = calculate_sortino_ratio(portfolio_returns) * self.annualization_factor
+
+
+
         self.results_metrics = {
             "Market Return": f"{100 * (self.historical_info['data_close', -1] / self.historical_info['data_close', 0] - 1):5.2f}%",
             "Portfolio Return": f"{100 * (self.historical_info['portfolio_valuation', -1] / self.historical_info['portfolio_valuation', 0] - 1):5.2f}%",
+            "Sharpe Ratio": f"{sharpe:5.2f}",
+            "Sortino Ratio": f"{sortino:5.2f}",
+            **calculate_metrics(self.historical_info),
+
         }
 
         for metric in self.log_metrics:
