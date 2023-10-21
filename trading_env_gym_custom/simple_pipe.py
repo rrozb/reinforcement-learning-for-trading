@@ -7,16 +7,12 @@ import numpy as np
 import pandas as pd
 import torch
 from gymnasium import register
-from stable_baselines3 import PPO, DQN
+from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import EvalCallback
 from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.vec_env import DummyVecEnv
 
 from custom_env import TradingEnv
-from trading_env_gym_custom.custom_policies import CustomPolicy
-from trading_env_gym_custom.evaluation import load_model, evaluate_model
-from trading_env_gym_custom.features_eng import create_features, split_data, simple_reward, rolling_zscore, CustomScaler
-from trading_env_gym_custom.logging_process import predict_next_sb_log_dir
+from trading_env_gym_custom.features_eng import create_features, split_data, simple_reward, CustomScaler
 
 print(TradingEnv)
 register(
@@ -24,6 +20,19 @@ register(
     entry_point='trading_env_gym_custom.custom_env:TradingEnv',  # Change 'path_to_your_module' to the module path of your environment
 )
 
+
+def linear_schedule(initial_value, final_value):
+    def schedule(progress_remaining):
+        return initial_value + (final_value - initial_value) * (1 - progress_remaining)
+
+    return schedule
+
+
+def exponential_schedule(initial_value, decay_rate):
+    def schedule(progress_remaining):
+        return initial_value * (decay_rate ** (1 - progress_remaining))
+
+    return schedule
 
 def set_seeds(seed):
     random.seed(seed)
@@ -107,21 +116,6 @@ def train_and_save_pipeline(data_dir, save_dir):
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     unique_save_dir = os.path.join(save_dir, f'run_{timestamp}')
     model_class = PPO
-    #PPO Spefific hyperparams
-    hyperparams = {
-        'learning_rate': 2.5e-5,
-        'n_steps': 2048,
-        'batch_size': 64,
-        'n_epochs': 10,
-        'gamma': 0.99,
-        'gae_lambda': 0.95,
-        'clip_range': 0.2,
-        'ent_coef': 0.01,
-        'vf_coef': 0.5,
-        'max_grad_norm': 0.5,
-        # 'use_sde': True,
-        # 'sde_sample_freq': 5
-    }
     if not os.path.exists(unique_save_dir):
         os.makedirs(unique_save_dir)
 
@@ -138,11 +132,28 @@ def train_and_save_pipeline(data_dir, save_dir):
     eval_callback = EvalCallback(eval_env,
                                  best_model_save_path=os.path.join(unique_save_dir, "best_model"),
                                  log_path=os.path.join(unique_save_dir, "results"),
-                                 eval_freq=20_000,
+                                 eval_freq=21_000,
                                  deterministic=True, render=False)
+    total_timesteps = 1_000_000
+    learning_rate_schedule = linear_schedule(3e-4, 2.5e-5)
+    clip_range_schedule = linear_schedule(0.3, 0.1)
+    # ent_coef_schedule = linear_schedule(0.1, 0.01)
+
+    hyperparams = {
+        'learning_rate': 2.5e-5,
+        'n_steps': 2048,
+        'batch_size': 64,
+        'n_epochs': 10,
+        'gamma': 0.99,
+        'gae_lambda': 0.95,
+        'clip_range': 0.3,
+        'ent_coef': 0.1,
+        'vf_coef': 0.5,
+        'max_grad_norm': 0.5,
+    }
     # 2. Training
     model = model_class('MlpPolicy', train_env, verbose=1, **hyperparams, tensorboard_log=base_log_path)
-    model.learn(total_timesteps=1_000_000, callback=eval_callback)
+    model.learn(total_timesteps=total_timesteps, callback=eval_callback)
 
 
 # def train_model(env, base_log_path, eval_callback, total_timesteps=300_000):
