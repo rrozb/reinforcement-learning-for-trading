@@ -144,9 +144,9 @@ def validate_and_roll_train(model_class, data_dir, save_dir, period='W'):
     periods = test_df['period'].unique()
 
     # Load the best model
-    unique_save_dir = os.path.join(save_dir, 'best_model')
-    best_model = load_best_model(model_class, unique_save_dir)
-
+    # unique_save_dir = os.path.join(save_dir, 'best_model')
+    best_model = load_best_model(model_class, save_dir)
+    total_reward = 0
     for p in periods:
         # Create a subset of test data for the current period
         period_df = test_df[test_df['period'] == p]
@@ -156,18 +156,21 @@ def validate_and_roll_train(model_class, data_dir, save_dir, period='W'):
 
         # Set the environment to the current period
         best_model.set_env(test_env_period)
+        best_model.learning_rate= 2.0e-3
 
         # Evaluate model on the current period without training
-        evaluate_model(best_model, test_env_period, save_dir)
+        total_reward += evaluate_model(best_model, test_env_period, save_dir)
 
         # Train model on the current period
-        best_model.learn(total_timesteps=len(period_df))
+        best_model.learn(total_timesteps=len(period_df) * 5)
+    print(f"Total reward: {total_reward}")
 
 
 def train_and_save_pipeline(data_dir, save_dir):
     # Create a unique directory based on the current timestamp
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     unique_save_dir = os.path.join(save_dir, f'run_{timestamp}')
+    print(f"Saving results to {unique_save_dir}")
     model_class = PPO
     if not os.path.exists(unique_save_dir):
         os.makedirs(unique_save_dir)
@@ -328,5 +331,9 @@ set_seeds(42)
 # process_data("/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h_2015-2023.pkl",
 #              date_indexes=[pd.to_datetime("2022-01-01"), pd.to_datetime("2023-01-01")])
 
-train_and_save_pipeline('/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h_2015-2023',
-'/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results')
+# train_and_save_pipeline('/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h_2015-2023',
+# '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results')
+
+validate_and_roll_train(PPO,
+                        '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h_2015-2023',
+                        '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results/run_20231022_075452')
