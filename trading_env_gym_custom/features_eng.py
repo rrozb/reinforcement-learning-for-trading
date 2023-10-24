@@ -149,6 +149,31 @@ def split_data(df: pd.DataFrame, train_size=0.70, valid_size=0.15, test_size=0.1
 
     return train_df, valid_df, test_df
 
+def split_data_by_dates(df: pd.DataFrame, train_end_date, valid_end_date):
+    """
+    Split a dataframe into training, validation, and test sets based on specified dates.
+
+    Parameters:
+    - df: The input dataframe with a datetime index.
+    - train_end_date: The end date for the training set.
+    - valid_end_date: The end date for the validation set. Also, the start date for the test set is assumed to be the next day.
+
+    Returns:
+    - train_df: Training dataframe.
+    - valid_df: Validation dataframe.
+    - test_df: Test dataframe.
+    """
+
+    # Ensure the DataFrame is sorted by date
+    df = df.sort_index()
+
+    # Split the data
+    train_df = df.loc[:train_end_date]
+    valid_df = df.loc[(train_end_date + pd.Timedelta(days=1)):valid_end_date]
+    test_df = df.loc[(valid_end_date + pd.Timedelta(days=1)):]
+
+    return train_df, valid_df, test_df
+
 def rolling_zscore(df, window=20):
     mean = df.rolling(window=window).mean()
     std = df.rolling(window=window).std()

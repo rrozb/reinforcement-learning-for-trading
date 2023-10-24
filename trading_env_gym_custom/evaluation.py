@@ -36,7 +36,8 @@ def evaluate_model(model, env, unique_save_dir=None):
 
     mean_total_return = sum(total_returns)
 
-    env.get_wrapper_attr('save_for_render')(unique_save_dir)
+    if unique_save_dir:
+        env.get_wrapper_attr('save_for_render')(unique_save_dir)
 
     return mean_total_return
 
