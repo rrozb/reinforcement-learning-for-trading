@@ -105,6 +105,7 @@ class MultiAssetPortfolio:
         if sum(target_positions.values()) > 1:
             raise ValueError("Sum of target positions should not exceed 100%")
         valorisation = self.valorisation(price_dict)
+        # FIXME: test and potentially correct asset & fiat borrowing.
         for asset, target_position in target_positions.items():
             current_position = self.real_position(price_dict)[asset]
             asset_trade = self.calculate_asset_trade(target_position, current_position, price_dict[asset], valorisation)
@@ -156,7 +157,31 @@ class MultiAssetPortfolio:
         self.fiat += proceeds
         self.assets[asset] += asset_trade  # asset_trade is negative here
 
+    def __str__(self):
+        # Create a string representation that lists all the attributes and their values
+        attrs = ', '.join(f"{key}={value}" for key, value in self.__dict__.items())
+        return f"{self.__class__.__name__}({attrs})"
 
+    def describe(self, price_dict):
+        # Print the total valuation and the detailed position of each asset
+        print("Total Value: ", self.valorisation(price_dict))
+        positions = self.real_position(price_dict)
+        for asset, position in positions.items():
+            print(f"Position in {asset}: {position:.2f}")
+
+    def get_portfolio_distribution(self):
+        # Creates a dictionary representing the distribution of assets, fiat, and interests
+        distribution = {
+            "assets": {asset: max(0, quantity) for asset, quantity in self.assets.items()},
+            "fiat": max(0, self.fiat),
+            "interests": {asset: self.interest_dict[asset] for asset in self.assets},
+            "interest_fiat": self.interest_fiat,
+        }
+        # Include borrowed assets if any
+        distribution["borrowed_assets"] = {asset: max(0, -quantity) for asset, quantity in self.assets.items() if
+                                           quantity < 0}
+        distribution["borrowed_fiat"] = max(0, -self.fiat) if self.fiat < 0 else 0
+        return distribution
 if __name__ == "__main__":
     # Example instantiation
     assets = {'AAPL': 10, 'GOOG': 5}
