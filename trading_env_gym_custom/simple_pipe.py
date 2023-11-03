@@ -48,14 +48,14 @@ def set_seeds(seed):
     torch.backends.cudnn.benchmark = False
 
 
-def process_data(data_path, sizes=None, date_indexes=None):
+def process_data(data_path, sizes=None, date_indexes=None, granularity='1h'):
     if sizes is not None and date_indexes is not None:
         raise ValueError("Only one of sizes and date_indexes can be specified")
 
     df = pd.read_pickle(data_path)
 
     # add features
-    df = create_features(df)
+    df = create_features(df, granularity=granularity)
 
     if sizes is not None:
         # Split data (e.g., 90% training, 10% testing)
@@ -177,6 +177,7 @@ def train_and_save_pipeline(data_dir, save_dir):
 
     # Load data
     train_df = pd.read_pickle(os.path.join(data_dir, "train.pkl"))
+    train_df = train_df.tail(500_000)
     eval_df = pd.read_pickle(os.path.join(data_dir, "eval.pkl"))
     test_df = pd.read_pickle(os.path.join(data_dir, "test.pkl"))
 
@@ -188,9 +189,10 @@ def train_and_save_pipeline(data_dir, save_dir):
     eval_callback = EvalCallback(eval_env,
                                  best_model_save_path=os.path.join(unique_save_dir, "best_model"),
                                  log_path=os.path.join(unique_save_dir, "results"),
-                                 eval_freq=21_000,
+                                 eval_freq=50_000,
+                                 n_eval_episodes=2,
                                  deterministic=True, render=False)
-    total_timesteps = 1_000_000
+    total_timesteps = 3_000_000
     learning_rate_schedule = linear_schedule(3e-4, 2.5e-5)
     clip_range_schedule = linear_schedule(0.3, 0.1)
     # ent_coef_schedule = linear_schedule(0.1, 0.01)
@@ -328,12 +330,12 @@ set_seeds(42)
 # final_data_dir = "/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h_2015-2023"
 # save_dir = '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results'
 # sequential_training(data_dirs, final_data_dir, save_dir)
-# process_data("/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h_2015-2023.pkl",
-#              date_indexes=[pd.to_datetime("2022-01-01"), pd.to_datetime("2023-01-01")])
+# process_data("/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-5m.pkl",
+#              date_indexes=[pd.to_datetime("2023-08-01"), pd.to_datetime("2023-09-01")], granularity='5m')
 
-# train_and_save_pipeline('/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h_2015-2023',
-# '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results')
+train_and_save_pipeline('/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-5m',
+'/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results')
 
-validate_and_roll_train(PPO,
-                        '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h_2015-2023',
-                        '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results/run_20231022_075452')
+# validate_and_roll_train(PPO,
+#                         '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h_2015-2023',
+#                         '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results/run_20231022_075452')

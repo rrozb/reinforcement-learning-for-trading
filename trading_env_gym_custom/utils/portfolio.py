@@ -75,3 +75,95 @@ class TargetPortfolio(Portfolio):
             interest_asset=0,
             interest_fiat=0
         )
+
+
+class MultiAssetPortfolio:
+    def __init__(self, asset_dict, fiat, interest_rate_dict=None, interest_fiat=0.0):
+        self.assets = asset_dict  # Dictionary with asset names as keys and quantities as values
+        self.fiat = fiat  # Total fiat value
+        self.interest_fiat = interest_fiat  # Amount of interest owed on fiat
+        self.interest_rate_dict = interest_rate_dict or {asset: 0.0 for asset in
+                                                         self.assets}  # Dictionary with asset names as keys and interest rates as values
+        self.interest_dict = {asset: 0.0 for asset in
+                              self.assets}  # Dictionary with asset names as keys and amount of interest as values
+
+    def valorisation(self, price_dict):
+        total_value = self.fiat
+        for asset, quantity in self.assets.items():
+            total_value += (quantity - self.interest_dict[asset]) * price_dict[asset]
+        return total_value
+
+    def real_position(self, price_dict):
+        # Calculates the real position of each asset as a proportion of the total portfolio value
+        positions = {}
+        total_valuation = self.valorisation(price_dict)
+        for asset in self.assets:
+            positions[asset] = (self.assets[asset] - self.interest_dict[asset]) * price_dict[asset] / total_valuation
+        return positions
+
+    def trade_to_position(self, target_positions, price_dict, trading_fees):
+        if sum(target_positions.values()) > 1:
+            raise ValueError("Sum of target positions should not exceed 100%")
+        valorisation = self.valorisation(price_dict)
+        for asset, target_position in target_positions.items():
+            current_position = self.real_position(price_dict)[asset]
+            asset_trade = self.calculate_asset_trade(target_position, current_position, price_dict[asset], valorisation)
+
+            self.repay_interest(asset, asset_trade)
+
+            self.execute_trade(asset, asset_trade, price_dict[asset], trading_fees)
+
+    def calculate_asset_trade(self, target_position, current_position, asset_price, valorisation):
+        return target_position * valorisation / asset_price - current_position
+
+    def repay_interest(self, asset, asset_trade):
+        interest_reduction_ratio = self.calculate_interest_reduction_ratio(asset, asset_trade)
+
+        if interest_reduction_ratio < 1:
+            self.adjust_interest_owed(asset, interest_reduction_ratio)
+            self.adjust_fiat_balance(asset, interest_reduction_ratio)
+
+    def calculate_interest_reduction_ratio(self, asset, asset_trade):
+        if self.interest_dict[asset] > 0 and asset_trade < 0:
+            return min(1, -asset_trade / self.interest_dict[asset])
+        elif self.interest_dict[asset] < 0 and asset_trade > 0:
+            return min(1, asset_trade / -self.interest_dict[asset])
+        return 1
+
+    def adjust_interest_owed(self, asset, interest_reduction_ratio):
+        interest_payment = (1 - interest_reduction_ratio) * self.interest_dict[asset] * self.interest_rate_dict[asset]
+        self.fiat -= interest_payment
+        self.interest_dict[asset] *= interest_reduction_ratio
+
+    def adjust_fiat_balance(self, asset, interest_reduction_ratio):
+        interest_fiat_payment = (1 - interest_reduction_ratio) * self.interest_fiat
+        self.fiat -= interest_fiat_payment
+        self.interest_fiat *= interest_reduction_ratio
+
+    def execute_trade(self, asset, asset_trade, asset_price, trading_fees):
+        if asset_trade > 0:
+            self.buy_asset(asset, asset_trade, asset_price, trading_fees)
+        else:
+            self.sell_asset(asset, asset_trade, asset_price, trading_fees)
+
+    def buy_asset(self, asset, asset_trade, asset_price, trading_fees):
+        cost = asset_trade * asset_price * (1 + trading_fees)
+        self.fiat -= cost
+        self.assets[asset] += asset_trade
+
+    def sell_asset(self, asset, asset_trade, asset_price, trading_fees):
+        proceeds = -asset_trade * asset_price * (1 - trading_fees)
+        self.fiat += proceeds
+        self.assets[asset] += asset_trade  # asset_trade is negative here
+
+
+if __name__ == "__main__":
+    # Example instantiation
+    assets = {'AAPL': 10, 'GOOG': 5}
+    fiat = 1000
+    interest_rates = {'AAPL': 0.01, 'GOOG': 0.02}
+    portfolio = MultiAssetPortfolio(assets, fiat, interest_rates)
+
+    # Example valuation
+    current_prices = {'AAPL': 150, 'GOOG': 2500}
+    print(portfolio.valorisation(current_prices))

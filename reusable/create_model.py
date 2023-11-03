@@ -49,7 +49,7 @@ def train_model(env, model_name: str, results_dir: str):
 
     trained_a2c = agent.train_model(model=model_a2c,
                                     tb_log_name='a2c',
-                                    total_timesteps=100_000)
+                                    total_timesteps=50_000)
 
     trained_a2c.save("trained_models/trained_a2c")
 
