@@ -81,35 +81,3 @@ class History:
         except ValueError as e:
             raise ValueError(f"Feature {column} does not exist ... Check the available features : {self.columns}")
         self.history_storage[:self.size][t, column_index] = value
-
-
-class MultiAssetHistory:
-    def __init__(self, assets, max_size=10000):
-        # Initialize a History instance for each asset
-        self.histories = {asset: History(max_size=max_size) for asset in assets}
-
-    #FIXME: refactor to not have duplicate data for each asset. Like idx, reward etc.
-
-    def _add_asset(self, asset, **kwargs):
-        # The original 'add' method now private
-        self.histories[asset].add(**kwargs)
-
-    def _set_asset(self, asset, **kwargs):
-        # The original 'set' method now private
-        self.histories[asset].set(**kwargs)
-
-    def add(self, **kwargs):
-        # New 'add' method that ensures atomicity across all assets
-        # Perform validation here if necessary
-        for asset in self.histories.keys():
-            if asset not in kwargs:
-                raise ValueError(f"Missing data for asset: {asset}")
-            self._add_asset(asset, **kwargs[asset])
-
-    def set(self, **kwargs):
-        # New 'set' method that ensures atomicity across all assets
-        # Perform validation here if necessary
-        for asset in self.histories.keys():
-            if asset not in kwargs:
-                raise ValueError(f"Missing data for asset: {asset}")
-            self._set_asset(asset, **kwargs[asset])

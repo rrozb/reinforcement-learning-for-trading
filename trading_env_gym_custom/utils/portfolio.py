@@ -82,6 +82,7 @@ class TargetPortfolio(Portfolio):
 
 class MultiAssetPortfolio:
     def __init__(self, asset_dict, fiat, interest_rate_dict=None, interest_fiat=0.0):
+        self.all_assets = list(asset_dict.keys())  # List of all assets
         self.assets = asset_dict  # Dictionary with asset names as keys and quantities as values
         self.fiat = fiat  # Total fiat value
         self.interest_fiat = interest_fiat  # Amount of interest owed on fiat
@@ -98,6 +99,7 @@ class MultiAssetPortfolio:
         np.random.shuffle(assets)  # Shuffle the list to ensure random order
 
         for asset in assets:
+            asset_dict.setdefault(asset, 0)
             price = price_dict[asset]
             if remaining_fiat > (price*trading_fees)*2:  # Only proceed if we can afford the trading fees for this
                 # asset.
@@ -193,18 +195,29 @@ class MultiAssetPortfolio:
             print(f"Position in {asset}: {position:.2f}")
 
     def get_portfolio_distribution(self):
-        # Creates a dictionary representing the distribution of assets, fiat, and interests
+        # Make sure all_assets contains the list of all possible assets
         distribution = {
-            "assets": {asset: max(0, quantity) for asset, quantity in self.assets.items()},
+            "assets": {asset: self.assets.get(asset, 0) for asset in self.all_assets},
             "fiat": max(0, self.fiat),
-            "interests": {asset: self.interest_dict[asset] for asset in self.assets},
+            "interests": {asset: self.interest_dict.get(asset, 0) for asset in self.all_assets},
             "interest_fiat": self.interest_fiat,
         }
-        # Include borrowed assets if any
-        distribution["borrowed_assets"] = {asset: max(0, -quantity) for asset, quantity in self.assets.items() if
-                                           quantity < 0}
+        # Ensure that we include all assets, setting their borrowed value to 0 if not present
+        distribution["borrowed_assets"] = {asset: max(0, -self.assets.get(asset, 0)) for asset in self.all_assets}
         distribution["borrowed_fiat"] = max(0, -self.fiat) if self.fiat < 0 else 0
         return distribution
+
+    def get_flatten_distribution(self):
+        # Flattens the nested distribution dictionary into a single-level dictionary
+        distribution = self.get_portfolio_distribution()
+        flat_distribution = {}
+        for key, value in distribution.items():
+            if isinstance(value, dict):
+                for inner_key, inner_value in value.items():
+                    flat_distribution[f"{key}_{inner_key}".lower()] = inner_value
+            else:
+                flat_distribution[key] = value
+        return flat_distribution
 if __name__ == "__main__":
     # Example instantiation
     assets = {'AAPL': 10, 'GOOG': 5}

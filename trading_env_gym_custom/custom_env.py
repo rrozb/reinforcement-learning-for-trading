@@ -83,6 +83,15 @@ def calculate_metrics(historical_info):
     return results_metrics
 
 
+def flatten_data(data):
+    flattened_data = {}
+    for outer_key, inner_dict in data.items():
+        for inner_key, value in inner_dict.items():
+            # Concatenate outer key and inner key
+            flattened_key = f"{outer_key}_{inner_key}"
+            flattened_data[flattened_key] = value
+    return flattened_data
+
 class TradingEnv(gym.Env):
     """
     An easy trading environment for OpenAI gym. It is recommended to use it this way :
@@ -716,17 +725,26 @@ class TradingMultiAssetEnv(gym.Env):
                                                           interest_rate_dict=interest_rate_dict)
 
         # Set up the historical_info data structure (placeholder for your actual implementation)
-        self.historical_info = None  # TODO: Implement the historical info tracking for multi-asset
+        self.historical_info = History(max_size=len(self.df.index.levels[1]))
+        self.historical_info.set(
+            idx=self._idx,
+            step=self._step,
+            date=self.df.index.levels[1][self._idx],
+            reward=0,
+            portfolio_valuation=self.portfolio.valorisation(self._get_prices()),
+            portfolio_distribution=self.portfolio.get_flatten_distribution(),
+            data=flatten_data(
+                {asset: dict(zip(self._info_columns, self._info_array[asset][self._idx])) for asset in self.assets})
 
-        # Initialize other elements required for the environment's state if there are any
-        # ...
+        )
+
 
         self._resets += 1
 
         # Obtain the initial observation using your environment's specific method
         initial_obs = self._get_obs()
 
-        return initial_obs, None  # Replace None with the initial state of historical info when implemented
+        return initial_obs, self.historical_info[0]
 
     def add_limit_order(self, position, limit, persistent=False):
         self._limit_orders[position] = {

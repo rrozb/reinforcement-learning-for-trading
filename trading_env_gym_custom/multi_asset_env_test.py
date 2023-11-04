@@ -26,5 +26,6 @@ env = TradingMultiAssetEnv(
     df=multi_df,
 )
 
-env.reset()
-print(env.portfolio.get_portfolio_distribution())
+obs, info = env.reset()
+print(obs, "\n", info)
+# print(env.portfolio.get_flatten_distribution())
