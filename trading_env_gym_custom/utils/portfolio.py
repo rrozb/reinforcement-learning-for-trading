@@ -91,15 +91,7 @@ class MultiAssetPortfolio:
                               self.assets}  # Dictionary with asset names as keys and amount of interest as values
 
     @classmethod
-    def from_random(cls, price_dict, fiat, interest_rate_dict=None, interest_fiat=0.0):
-        """
-        Creates a new MultiAssetPortfolio instance with randomly assigned asset quantities,
-        ensuring the total cost does not exceed the available fiat.
-
-        Parameters:
-        - price_dict: A dictionary with asset names as keys and their current prices as values.
-        - fiat: The total fiat value available to purchase assets.
-        """
+    def from_random(cls, price_dict, fiat, interest_rate_dict=None, interest_fiat=0.0, trading_fees=0.0):
         asset_dict = {}
         remaining_fiat = fiat
         assets = list(price_dict.keys())
@@ -107,10 +99,11 @@ class MultiAssetPortfolio:
 
         for asset in assets:
             price = price_dict[asset]
-            if remaining_fiat > price:  # Only proceed if we have enough fiat to buy at least one unit
-                max_quantity = remaining_fiat // price  # Maximum quantity we can afford
-                quantity = np.random.randint(0, max_quantity + 1)  # Random quantity
-                cost = quantity * price
+            if remaining_fiat > (price*trading_fees)*2:  # Only proceed if we can afford the trading fees for this
+                # asset.
+                max_quantity = remaining_fiat / price  # Maximum quantity we can afford
+                quantity = np.random.uniform(0, max_quantity)  # Random fractional quantity
+                cost = quantity * price * (1 + trading_fees)  # Cost of the trade
                 asset_dict[asset] = quantity
                 remaining_fiat -= cost
 
@@ -180,12 +173,12 @@ class MultiAssetPortfolio:
     def buy_asset(self, asset, asset_trade, asset_price, trading_fees):
         cost = asset_trade * asset_price * (1 + trading_fees)
         self.fiat -= cost
-        self.assets[asset] += asset_trade
+        self.assets[asset] = self.assets.get(asset, 0) + asset_trade  # Ensure to handle fractions
 
     def sell_asset(self, asset, asset_trade, asset_price, trading_fees):
         proceeds = -asset_trade * asset_price * (1 - trading_fees)
         self.fiat += proceeds
-        self.assets[asset] += asset_trade  # asset_trade is negative here
+        self.assets[asset] = self.assets.get(asset, 0) + asset_trade  # asset_trade is negative here
 
     def __str__(self):
         # Create a string representation that lists all the attributes and their values

@@ -526,7 +526,7 @@ class TradingMultiAssetEnv(gym.Env):
         self._position = None
         self._limit_orders = None
         self._idx = None
-        self._portfolio = None
+        self.portfolio = None
         self.historical_info = None
 
         self.max_episode_duration = max_episode_duration
@@ -548,7 +548,7 @@ class TradingMultiAssetEnv(gym.Env):
         # TODO: parameterize this
         self.annualization_factor = np.sqrt(24 * 365)
 
-        self.action_space = spaces.Box(low=0, high=1, shape=(len(self.df.index.levels[1]),), dtype=np.float32)
+        self.action_space = spaces.Box(low=0, high=1, shape=(len(self.df.index.levels[0]),), dtype=np.float32)
         #TODO: add support for porfolio feautes.
 
 
@@ -609,6 +609,13 @@ class TradingMultiAssetEnv(gym.Env):
 
     def _get_price(self, asset, delta=0):
         return self._price_array[asset][self._idx + delta]
+
+    def _get_prices(self, delta=0):
+        return {asset: self._get_price(asset, delta) for asset in self.assets}
+
+    def _get_tickers(self, delta=0):
+        return {asset: self._get_ticker(asset, delta) for asset in self.assets}
+
 
     def _get_obs(self):
         all_obs = []
@@ -704,7 +711,7 @@ class TradingMultiAssetEnv(gym.Env):
         interest_rate_dict = {asset: 0.0 for asset in self.assets}  # Assuming no interest by default
 
         # Create the multi-asset portfolio instance
-        self._portfolio = MultiAssetPortfolio.from_random(price_dict=self._get_price(self.assets),
+        self.portfolio = MultiAssetPortfolio.from_random(price_dict=self._get_prices(),
                                                           fiat=initial_fiat,
                                                           interest_rate_dict=interest_rate_dict)
 

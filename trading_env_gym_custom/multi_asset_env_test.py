@@ -25,6 +25,6 @@ multi_df.sort_index(inplace=True)
 env = TradingMultiAssetEnv(
     df=multi_df,
 )
-env._idx = 0
-print(env._get_price("BTC", ))
-print(env.df["close"].head())
+
+env.reset()
+print(env.portfolio.get_portfolio_distribution())
