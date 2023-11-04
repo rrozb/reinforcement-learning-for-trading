@@ -91,6 +91,7 @@ class MultiAssetPortfolio:
         self.interest_dict = {asset: 0.0 for asset in
                               self.assets}  # Dictionary with asset names as keys and amount of interest as values
 
+        #TODO: interest rates are mostly broken for now, need to fix them later.
     @classmethod
     def from_random(cls, price_dict, fiat, interest_rate_dict=None, interest_fiat=0.0, trading_fees=0.0):
         asset_dict = {}

@@ -92,6 +92,7 @@ def flatten_data(data):
             flattened_data[flattened_key] = value
     return flattened_data
 
+
 class TradingEnv(gym.Env):
     """
     An easy trading environment for OpenAI gym. It is recommended to use it this way :
@@ -214,7 +215,6 @@ class TradingEnv(gym.Env):
                 # tf.summary.scalar(name=key, data=value, step=self._step)
             print(f"{key} : {value}   |   ", end="")
         print("\n")
-
 
     def log_plot(self, name, data):
         plt.figure(figsize=(10, 5))
@@ -558,15 +558,14 @@ class TradingMultiAssetEnv(gym.Env):
         self.annualization_factor = np.sqrt(24 * 365)
 
         self.action_space = spaces.Box(low=0, high=1, shape=(len(self.df.index.levels[0]),), dtype=np.float32)
-        #TODO: add support for porfolio feautes.
-
+        # TODO: add support for porfolio feautes.
 
         self.log_metrics = []
 
         self._initialize_observation_space()
 
     def _initialize_observation_space(self):
-        #FIXME: make sure this is correct
+        # FIXME: make sure this is correct
         if self.windows is not None:
             self.observation_space = spaces.Box(
                 -np.inf,
@@ -625,7 +624,6 @@ class TradingMultiAssetEnv(gym.Env):
     def _get_tickers(self, delta=0):
         return {asset: self._get_ticker(asset, delta) for asset in self.assets}
 
-
     def _get_obs(self):
         all_obs = []
         for asset in self.assets:
@@ -651,8 +649,12 @@ class TradingMultiAssetEnv(gym.Env):
         # The shape will be (number_of_assets, window_size, number_of_features)
         return np.stack(all_obs)
 
+    def _take_action(self, position):
+        # Fixme: update it for multiple assets
+        if position != self._position:
+            self._trade(position)
     def _trade(self, position, price=None):
-        #FIXME: update it for multiple assets
+        # FIXME: update it for multiple assets
         self._portfolio.trade_to_position(
             position,
             price=self._get_price() if price is None else price,
@@ -661,24 +663,9 @@ class TradingMultiAssetEnv(gym.Env):
         self._position = position
         return
 
-    def _take_action(self, position):
-        # Fixme: update it for multiple assets
-        if position != self._position:
-            self._trade(position)
-
-    def _take_action_order_limit(self):
-        # Fixme: update it for multiple assets
-        if len(self._limit_orders) > 0:
-            ticker = self._get_ticker()
-            for position, params in self._limit_orders.items():
-                if position != self._position and params['limit'] <= ticker["high"] and params['limit'] >= ticker[
-                    "low"]:
-                    self._trade(position, price=params['limit'])
-                    if not params['persistent']: del self._limit_orders[position]
     @property
     def assets(self):
         return self.df.index.levels[0].unique()
-
 
     def log(self):
         # with self.writer.as_default():
@@ -721,8 +708,8 @@ class TradingMultiAssetEnv(gym.Env):
 
         # Create the multi-asset portfolio instance
         self.portfolio = MultiAssetPortfolio.from_random(price_dict=self._get_prices(),
-                                                          fiat=initial_fiat,
-                                                          interest_rate_dict=interest_rate_dict)
+                                                         fiat=initial_fiat,
+                                                         interest_rate_dict=interest_rate_dict)
 
         # Set up the historical_info data structure (placeholder for your actual implementation)
         self.historical_info = History(max_size=len(self.df.index.levels[1]))
@@ -738,7 +725,6 @@ class TradingMultiAssetEnv(gym.Env):
 
         )
 
-
         self._resets += 1
 
         # Obtain the initial observation using your environment's specific method
@@ -746,22 +732,14 @@ class TradingMultiAssetEnv(gym.Env):
 
         return initial_obs, self.historical_info[0]
 
-    def add_limit_order(self, position, limit, persistent=False):
-        self._limit_orders[position] = {
-            'limit': limit,
-            'persistent': persistent
-        }
-
     def step(self, position_index=None):
-        if position_index is not None: self._take_action(self.positions[position_index])
+        # TODO: update for multiple assets
+        # if position_index is not None: self._take_action(self.positions[position_index])
         self._idx += 1
         self._step += 1
 
-        self._take_action_order_limit()
-        price = self._get_price()
-        self._portfolio.update_interest(borrow_interest_rate=self.borrow_interest_rate)
-        portfolio_value = self._portfolio.valorisation(price)
-        portfolio_distribution = self._portfolio.get_portfolio_distribution()
+        portfolio_value = self.portfolio.valorisation(self._get_prices())
+        portfolio_distribution = self.portfolio.get_flatten_distribution()
 
         done, truncated = False, False
 
@@ -771,19 +749,19 @@ class TradingMultiAssetEnv(gym.Env):
             truncated = True
         if isinstance(self.max_episode_duration, int) and self._step >= self.max_episode_duration - 1:
             truncated = True
+        reward = 0
 
         self.historical_info.add(
             idx=self._idx,
             step=self._step,
             date=self.df.index.values[self._idx],
-            position_index=position_index,
-            position=self._position,
-            real_position=self._portfolio.real_position(price),
-            data=dict(zip(self._info_columns, self._info_array[self._idx])),
+            reward=reward,
             portfolio_valuation=portfolio_value,
             portfolio_distribution=portfolio_distribution,
-            reward=0
+            data=flatten_data(
+                {asset: dict(zip(self._info_columns, self._info_array[asset][self._idx])) for asset in self.assets}),
         )
+
         if not done:
             reward = self.reward_function(self.historical_info)
             self.historical_info["reward", -1] = reward
