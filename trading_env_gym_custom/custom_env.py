@@ -507,7 +507,7 @@ class TradingMultiAssetEnv(gym.Env):
 
     def __init__(self,
                  df: pd.DataFrame,
-                 dynamic_feature_functions=[dynamic_feature_last_position_taken, dynamic_feature_real_position],
+                 dynamic_feature_functions=None,
                  reward_function=basic_reward_function,
                  windows=None,
                  trading_fees=0,
@@ -534,7 +534,7 @@ class TradingMultiAssetEnv(gym.Env):
         self.name = name
         self.verbose = verbose
 
-        self.dynamic_feature_functions = dynamic_feature_functions
+        self.dynamic_feature_functions = dynamic_feature_functions if dynamic_feature_functions is not None else []
         self.reward_function = reward_function
         self.windows = windows
         self.trading_fees = trading_fees
@@ -551,19 +551,110 @@ class TradingMultiAssetEnv(gym.Env):
 
         self.action_space = spaces.Box(low=0, high=1, shape=(len(self.df.index.levels[1]),), dtype=np.float32)
         #TODO: add support for porfolio feautes.
-        self.observation_space = spaces.Box(
-            -np.inf,
-            np.inf,
-            shape=[self._nb_features]
-        )
+
+
+        self.log_metrics = []
+
+        self._initialize_observation_space()
+
+    def _initialize_observation_space(self):
+        #FIXME: make sure this is correct
         if self.windows is not None:
             self.observation_space = spaces.Box(
                 -np.inf,
                 np.inf,
                 shape=[self.windows, self._nb_features]
             )
+        else:
+            self.observation_space = spaces.Box(
+                -np.inf,
+                np.inf,
+                shape=[self._nb_features]
+            )
 
-        self.log_metrics = []
+    def _set_df(self, df):
+        # Assuming df is already copied before this method is called
+        # Ensure the DataFrame has a proper multi-index for multi-asset support
+        if not isinstance(df.index, pd.MultiIndex):
+            raise ValueError("DataFrame index must be a MultiIndex with levels [asset, datetime].")
+
+        # Split columns into feature and info columns, handling for each asset
+        self._features_columns = [col for col in df.columns if "feature" in col]
+        self._info_columns = list(set(df.columns) - set(self._features_columns) - {"close"})
+        self._nb_features = len(self._features_columns)
+        self._nb_static_features = self._nb_features  # Assuming static features don't change
+
+        # Initialize dynamic features to zero for each asset
+        for i, func in enumerate(self.dynamic_feature_functions):
+            df[(f"dynamic_feature__{i}", '')] = 0
+            self._features_columns.append(f"dynamic_feature__{i}")
+            self._nb_features += 1
+
+        # Update df to the class instance
+        self.df = df
+
+        # Now, you have to handle the fact that you're dealing with a multi-indexed DataFrame
+        # Here's an example of how you might structure the observations for multiple assets
+        self._obs_array = {asset: np.array(self.df.xs(asset).loc[:, self._features_columns], dtype=np.float32)
+                           for asset in df.index.levels[0]}
+
+        self._info_array = {asset: np.array(self.df.xs(asset).loc[:, self._info_columns])
+                            for asset in df.index.levels[0]}
+
+        self._price_array = {asset: np.array(self.df.xs(asset)["close"])
+                             for asset in df.index.levels[0]}
+
+    def _get_ticker(self, asset, delta=0):
+        idx_date = self.df.index.get_level_values('date')[self._idx + delta]
+        return self.df.xs(idx_date, level='date').loc[asset]
+
+    def _get_price(self, asset, delta=0):
+        return self._price_array[asset][self._idx + delta]
+
+    def _get_obs(self):
+        all_obs = []
+        for asset in self.assets:
+            historical_data = self.df.xs(asset).iloc[:self._idx + 1]
+
+            for i, dynamic_feature_function in enumerate(self.dynamic_feature_functions):
+                self._obs_array[asset][self._idx, self._nb_static_features + i] = dynamic_feature_function(
+                    historical_data)
+
+            if self.windows is None:
+                obs = self._obs_array[asset][self._idx]
+            else:
+                start_idx = max(0, self._idx + 1 - self.windows)
+                obs = self._obs_array[asset][start_idx:self._idx + 1].flatten()  # Flattening if windows is used.
+
+            all_obs.append(obs)
+
+        return np.concatenate(all_obs)  # Concatenate observations from all assets for the RL model.
+
+    def _trade(self, position, price=None):
+        self._portfolio.trade_to_position(
+            position,
+            price=self._get_price() if price is None else price,
+            trading_fees=self.trading_fees
+        )
+        self._position = position
+        return
+
+    def _take_action(self, position):
+        if position != self._position:
+            self._trade(position)
+
+    def _take_action_order_limit(self):
+        if len(self._limit_orders) > 0:
+            ticker = self._get_ticker()
+            for position, params in self._limit_orders.items():
+                if position != self._position and params['limit'] <= ticker["high"] and params['limit'] >= ticker[
+                    "low"]:
+                    self._trade(position, price=params['limit'])
+                    if not params['persistent']: del self._limit_orders[position]
+    @property
+    def assets(self):
+        return self.df.index.levels[0].unique()
+
 
     def log(self):
         # with self.writer.as_default():
@@ -584,39 +675,6 @@ class TradingMultiAssetEnv(gym.Env):
         buf.seek(0)
         with self.writer.as_default():
             tf.summary.image(name, np.expand_dims(plt.imread(buf), 0), step=self._step)
-
-    def _set_df(self, df):
-        df = df.copy()
-        self._features_columns = [col for col in df.columns if "feature" in col]
-        self._info_columns = list(set(list(df.columns) + ["close"]) - set(self._features_columns))
-        self._nb_features = len(self._features_columns)
-        self._nb_static_features = self._nb_features
-
-        for i in range(len(self.dynamic_feature_functions)):
-            df[f"dynamic_feature__{i}"] = 0
-            self._features_columns.append(f"dynamic_feature__{i}")
-            self._nb_features += 1
-
-        self.df = df
-        self._obs_array = np.array(self.df[self._features_columns], dtype=np.float32)
-        self._info_array = np.array(self.df[self._info_columns])
-        self._price_array = np.array(self.df["close"])
-
-    def _get_ticker(self, delta=0):
-        return self.df.iloc[self._idx + delta]
-
-    def _get_price(self, delta=0):
-        return self._price_array[self._idx + delta]
-
-    def _get_obs(self):
-        for i, dynamic_feature_function in enumerate(self.dynamic_feature_functions):
-            self._obs_array[self._idx, self._nb_static_features + i] = dynamic_feature_function(self.historical_info)
-
-        if self.windows is None:
-            _step_index = self._idx
-        else:
-            _step_index = np.arange(self._idx + 1 - self.windows, self._idx + 1)
-        return self._obs_array[_step_index]
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
@@ -658,27 +716,7 @@ class TradingMultiAssetEnv(gym.Env):
         return self._get_obs(), self.historical_info[0]
 
 
-    def _trade(self, position, price=None):
-        self._portfolio.trade_to_position(
-            position,
-            price=self._get_price() if price is None else price,
-            trading_fees=self.trading_fees
-        )
-        self._position = position
-        return
 
-    def _take_action(self, position):
-        if position != self._position:
-            self._trade(position)
-
-    def _take_action_order_limit(self):
-        if len(self._limit_orders) > 0:
-            ticker = self._get_ticker()
-            for position, params in self._limit_orders.items():
-                if position != self._position and params['limit'] <= ticker["high"] and params['limit'] >= ticker[
-                    "low"]:
-                    self._trade(position, price=params['limit'])
-                    if not params['persistent']: del self._limit_orders[position]
 
     def add_limit_order(self, position, limit, persistent=False):
         self._limit_orders[position] = {
