@@ -1,3 +1,6 @@
+import numpy as np
+
+
 class Portfolio:
     def __init__(self, asset, fiat, interest_asset=0, interest_fiat=0):
         self.asset = asset
@@ -86,6 +89,33 @@ class MultiAssetPortfolio:
                                                          self.assets}  # Dictionary with asset names as keys and interest rates as values
         self.interest_dict = {asset: 0.0 for asset in
                               self.assets}  # Dictionary with asset names as keys and amount of interest as values
+
+    @classmethod
+    def from_random(cls, price_dict, fiat, interest_rate_dict=None, interest_fiat=0.0):
+        """
+        Creates a new MultiAssetPortfolio instance with randomly assigned asset quantities,
+        ensuring the total cost does not exceed the available fiat.
+
+        Parameters:
+        - price_dict: A dictionary with asset names as keys and their current prices as values.
+        - fiat: The total fiat value available to purchase assets.
+        """
+        asset_dict = {}
+        remaining_fiat = fiat
+        assets = list(price_dict.keys())
+        np.random.shuffle(assets)  # Shuffle the list to ensure random order
+
+        for asset in assets:
+            price = price_dict[asset]
+            if remaining_fiat > price:  # Only proceed if we have enough fiat to buy at least one unit
+                max_quantity = remaining_fiat // price  # Maximum quantity we can afford
+                quantity = np.random.randint(0, max_quantity + 1)  # Random quantity
+                cost = quantity * price
+                asset_dict[asset] = quantity
+                remaining_fiat -= cost
+
+        return cls(asset_dict=asset_dict, fiat=remaining_fiat, interest_rate_dict=interest_rate_dict,
+                   interest_fiat=interest_fiat)
 
     def valorisation(self, price_dict):
         total_value = self.fiat

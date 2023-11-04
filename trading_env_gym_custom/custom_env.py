@@ -15,7 +15,7 @@ from matplotlib import pyplot as plt
 from tensorflow.summary import create_file_writer
 
 from trading_env_gym_custom.utils.history import History
-from trading_env_gym_custom.utils.portfolio import TargetPortfolio
+from trading_env_gym_custom.utils.portfolio import TargetPortfolio, MultiAssetPortfolio
 
 warnings.filterwarnings("error")
 
@@ -513,7 +513,6 @@ class TradingMultiAssetEnv(gym.Env):
                  trading_fees=0,
                  borrow_interest_rate=0,
                  portfolio_initial_value=1000,
-                 initial_position='random',
                  max_episode_duration='max',
                  verbose=1,
                  name="Stock",
@@ -540,7 +539,7 @@ class TradingMultiAssetEnv(gym.Env):
         self.trading_fees = trading_fees
         self.borrow_interest_rate = borrow_interest_rate
         self.portfolio_initial_value = float(portfolio_initial_value)
-        self.initial_position = initial_position
+        # TODO: add customizable initial position?
 
         self.max_episode_duration = max_episode_duration
         self.render_mode = render_mode
@@ -616,21 +615,28 @@ class TradingMultiAssetEnv(gym.Env):
         for asset in self.assets:
             historical_data = self.df.xs(asset).iloc[:self._idx + 1]
 
+            # Apply dynamic features
             for i, dynamic_feature_function in enumerate(self.dynamic_feature_functions):
                 self._obs_array[asset][self._idx, self._nb_static_features + i] = dynamic_feature_function(
                     historical_data)
 
+            # If no windowing is required, the observation is simply the last entry
             if self.windows is None:
                 obs = self._obs_array[asset][self._idx]
             else:
+                # When windowing, create a 2D array of shape (window_size, number_of_features)
                 start_idx = max(0, self._idx + 1 - self.windows)
-                obs = self._obs_array[asset][start_idx:self._idx + 1].flatten()  # Flattening if windows is used.
+                obs = self._obs_array[asset][start_idx:self._idx + 1]
 
+            # Add the 2D array for this asset to the list
             all_obs.append(obs)
 
-        return np.concatenate(all_obs)  # Concatenate observations from all assets for the RL model.
+        # Combine all 2D arrays into a 3D array for the LSTM
+        # The shape will be (number_of_assets, window_size, number_of_features)
+        return np.stack(all_obs)
 
     def _trade(self, position, price=None):
+        #FIXME: update it for multiple assets
         self._portfolio.trade_to_position(
             position,
             price=self._get_price() if price is None else price,
@@ -640,10 +646,12 @@ class TradingMultiAssetEnv(gym.Env):
         return
 
     def _take_action(self, position):
+        # Fixme: update it for multiple assets
         if position != self._position:
             self._trade(position)
 
     def _take_action_order_limit(self):
+        # Fixme: update it for multiple assets
         if len(self._limit_orders) > 0:
             ticker = self._get_ticker()
             for position, params in self._limit_orders.items():
@@ -677,46 +685,41 @@ class TradingMultiAssetEnv(gym.Env):
             tf.summary.image(name, np.expand_dims(plt.imread(buf), 0), step=self._step)
 
     def reset(self, seed=None, options=None):
-        super().reset(seed=seed)
+        super().reset(seed=seed)  # If there's a superclass to initialize from
 
         self._step = 0
-        self._position = np.random.choice(
-            self.positions) if self.initial_position == 'random' else self.initial_position
-        self._limit_orders = {}
-
         self._idx = 0
-        if self.windows is not None: self._idx = self.windows - 1
+        if self.windows is not None:
+            self._idx = self.windows - 1
         if self.max_episode_duration != 'max':
             self._idx = np.random.randint(
                 low=self._idx,
-                high=len(self.df) - self.max_episode_duration - self._idx
+                high=len(self.df.index.levels[1]) - self.max_episode_duration
             )
 
-        self._portfolio = TargetPortfolio(
-            position=self._position,
-            value=self.portfolio_initial_value,
-            price=self._get_price()
-        )
+        # Initialize fiat value - this could be the same for all assets or vary
+        initial_fiat = self.portfolio_initial_value
 
-        self.historical_info = History(max_size=len(self.df))
-        self.historical_info.set(
-            idx=self._idx,
-            step=self._step,
-            date=self.df.index.values[self._idx],
-            position_index=self.positions.index(self._position),
-            position=self._position,
-            real_position=self._position,
-            data=dict(zip(self._info_columns, self._info_array[self._idx])),
-            portfolio_valuation=self.portfolio_initial_value,
-            portfolio_distribution=self._portfolio.get_portfolio_distribution(),
-            reward=0,
-        )
+        # Initialize interest rates for assets, if applicable
+        interest_rate_dict = {asset: 0.0 for asset in self.assets}  # Assuming no interest by default
+
+        # Create the multi-asset portfolio instance
+        self._portfolio = MultiAssetPortfolio.from_random(price_dict=self._get_price(self.assets),
+                                                          fiat=initial_fiat,
+                                                          interest_rate_dict=interest_rate_dict)
+
+        # Set up the historical_info data structure (placeholder for your actual implementation)
+        self.historical_info = None  # TODO: Implement the historical info tracking for multi-asset
+
+        # Initialize other elements required for the environment's state if there are any
+        # ...
+
         self._resets += 1
 
-        return self._get_obs(), self.historical_info[0]
+        # Obtain the initial observation using your environment's specific method
+        initial_obs = self._get_obs()
 
-
-
+        return initial_obs, None  # Replace None with the initial state of historical info when implemented
 
     def add_limit_order(self, position, limit, persistent=False):
         self._limit_orders[position] = {
