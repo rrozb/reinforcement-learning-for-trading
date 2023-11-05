@@ -27,6 +27,6 @@ env = TradingMultiAssetEnv(
 )
 
 obs, info = env.reset()
-print(obs, "\n", info)
-print(env.step())
+# print(obs, "\n", info)
+print(env.step([0.0, -1]))
 # print(env.portfolio.get_flatten_distribution())

@@ -82,7 +82,7 @@ class TargetPortfolio(Portfolio):
 
 class MultiAssetPortfolio:
     def __init__(self, asset_dict, fiat, interest_rate_dict=None, interest_fiat=0.0):
-        self.all_assets = list(asset_dict.keys())  # List of all assets
+        self.all_assets = list(sorted(asset_dict.keys()))  # List of all assets
         self.assets = asset_dict  # Dictionary with asset names as keys and quantities as values
         self.fiat = fiat  # Total fiat value
         self.interest_fiat = interest_fiat  # Amount of interest owed on fiat
@@ -104,6 +104,7 @@ class MultiAssetPortfolio:
             price = price_dict[asset]
             if remaining_fiat > (price*trading_fees)*2:  # Only proceed if we can afford the trading fees for this
                 # asset.
+                # TOD: fix starting with short positions.
                 max_quantity = remaining_fiat / price  # Maximum quantity we can afford
                 quantity = np.random.uniform(0, max_quantity)  # Random fractional quantity
                 cost = quantity * price * (1 + trading_fees)  # Cost of the trade
@@ -133,14 +134,14 @@ class MultiAssetPortfolio:
         valorisation = self.valorisation(price_dict)
         # FIXME: test and potentially correct asset & fiat borrowing.
         for asset, target_position in target_positions.items():
-            current_position = self.real_position(price_dict)[asset]
-            asset_trade = self.calculate_asset_trade(target_position, current_position, price_dict[asset], valorisation)
+            asset_trade = self.calculate_asset_trade(target_position, price_dict[asset], self.assets[asset],
+                                                     valorisation)
 
             self.repay_interest(asset, asset_trade)
 
             self.execute_trade(asset, asset_trade, price_dict[asset], trading_fees)
 
-    def calculate_asset_trade(self, target_position, current_position, asset_price, valorisation):
+    def calculate_asset_trade(self, target_position, asset_price, current_position, valorisation):
         return target_position * valorisation / asset_price - current_position
 
     def repay_interest(self, asset, asset_trade):
@@ -202,6 +203,7 @@ class MultiAssetPortfolio:
             "fiat": max(0, self.fiat),
             "interests": {asset: self.interest_dict.get(asset, 0) for asset in self.all_assets},
             "interest_fiat": self.interest_fiat,
+            "percentage": {},
         }
         # Ensure that we include all assets, setting their borrowed value to 0 if not present
         distribution["borrowed_assets"] = {asset: max(0, -self.assets.get(asset, 0)) for asset in self.all_assets}

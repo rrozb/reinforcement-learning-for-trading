@@ -649,23 +649,9 @@ class TradingMultiAssetEnv(gym.Env):
         # The shape will be (number_of_assets, window_size, number_of_features)
         return np.stack(all_obs)
 
-    def _take_action(self, position):
-        # Fixme: update it for multiple assets
-        if position != self._position:
-            self._trade(position)
-    def _trade(self, position, price=None):
-        # FIXME: update it for multiple assets
-        self._portfolio.trade_to_position(
-            position,
-            price=self._get_price() if price is None else price,
-            trading_fees=self.trading_fees
-        )
-        self._position = position
-        return
-
     @property
     def assets(self):
-        return self.df.index.levels[0].unique()
+        return sorted(self.df.index.levels[0].unique())
 
     def log(self):
         # with self.writer.as_default():
@@ -732,11 +718,21 @@ class TradingMultiAssetEnv(gym.Env):
 
         return initial_obs, self.historical_info[0]
 
-    def step(self, position_index=None):
-        # TODO: update for multiple assets
-        # if position_index is not None: self._take_action(self.positions[position_index])
+    def step(self, action):
+        # Normalize action to percentages
+        action_sum = np.sum(np.abs(action))  # Sum of absolute values, to handle negative values.
+        if action_sum > 0:
+            action_percentages = action / action_sum
+        else:
+            action_percentages = np.zeros_like(action)  # Avoid division by zero
+
         self._idx += 1
         self._step += 1
+        # TODO: check assets in portfolio and in action are the same.
+        target_positions = {asset: percentage for asset, percentage in
+                            zip(self.portfolio.all_assets, action_percentages)}
+
+        self.portfolio.trade_to_position(target_positions, self._get_prices(), self.trading_fees)
 
         portfolio_value = self.portfolio.valorisation(self._get_prices())
         portfolio_distribution = self.portfolio.get_flatten_distribution()
