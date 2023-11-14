@@ -761,10 +761,10 @@ class TradingMultiAssetEnv(gym.Env):
         if not done:
             reward = self.reward_function(self.historical_info)
             self.historical_info["reward", -1] = reward
-
-        if done or truncated:
-            self.calculate_metrics()
-            self.log()
+        # TODO: finish this.
+        # if done or truncated:
+        #     self.calculate_metrics()
+        #     self.log()
         return self._get_obs(), self.historical_info["reward", -1], done, truncated, self.historical_info[-1]
 
     def add_metric(self, name, function):
@@ -799,15 +799,3 @@ class TradingMultiAssetEnv(gym.Env):
     def get_metrics(self):
         return self.results_metrics
 
-    def save_for_render(self, dir="render_logs"):
-        assert "open" in self.df and "high" in self.df and "low" in self.df and "close" in self.df, "Your DataFrame needs to contain columns : open, high, low, close to render !"
-        columns = list(set(self.historical_info.columns) - set([f"date_{col}" for col in self._info_columns]))
-        history_df = pd.DataFrame(
-            self.historical_info[columns], columns=columns
-        )
-        history_df.set_index("date", inplace=True)
-        history_df.sort_index(inplace=True)
-        render_df = self.df.join(history_df, how="inner")
-
-        if not os.path.exists(dir): os.makedirs(dir)
-        render_df.to_pickle(f"{dir}/{self.name}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.pkl")

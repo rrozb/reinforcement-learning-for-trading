@@ -22,6 +22,11 @@ register(
     entry_point='trading_env_gym_custom.custom_env:TradingEnv',
     # Change 'path_to_your_module' to the module path of your environment
 )
+register(
+    id='MultiAssetTradingEnv',  # Unique ID for your environment
+    entry_point='trading_env_gym_custom.custom_env:MultiAssetPortfolio',
+    # Change 'path_to_your_module' to the module path of your environment
+)
 
 
 def linear_schedule(initial_value, final_value):
@@ -121,6 +126,34 @@ def create_envs(train_df, eval_df, test_df):
                                 positions=[-1, 0, 1],
                                 trading_fees=0.01 / 100,  # 0.01% per stock buy / sell (Binance fees)
                                 borrow_interest_rate=0.0003 / 100,  # 0.0003% per timestep (one timestep = 1h here),
+                                reward_function=simple_reward
+                                ))
+
+    return train_env, eval_env, test_env
+
+def create_multi_asset_envs(train_df, eval_df, test_df):
+    eval_env = Monitor(gym.make("MultiAssetTradingEnv",
+                                name="eval_train",
+                                df=eval_df, 
+                                trading_fees=0.01 / 100,
+                                borrow_interest_rate=0,
+                                reward_function=simple_reward,
+
+                                ))
+    train_env = Monitor(gym.make("MultiAssetTradingEnv",
+                                 name="BTCUSD",
+                                 df=train_df,
+
+                                 trading_fees=0.01 / 100,
+                                 borrow_interest_rate=0,
+                                 reward_function=simple_reward
+                                 ))
+
+    test_env = Monitor(gym.make("MultiAssetTradingEnv",
+                                name="eval_BTCUSD",
+                                df=test_df,
+                                trading_fees=0.01 / 100,
+                                borrow_interest_rate=0,
                                 reward_function=simple_reward
                                 ))
 
