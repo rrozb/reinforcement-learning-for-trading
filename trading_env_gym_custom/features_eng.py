@@ -14,9 +14,14 @@ def create_features(df: pd.DataFrame, granularity: str = '1h'):
     df['feature_hour'] = df.index.hour
     df['feature_dayofweek'] = df.index.dayofweek
     df['feature_month'] = df.index.month
-    df['feature_year'] = df.index.year
-    df['feature_dayofyear'] = df.index.dayofyear
+    # df['feature_year'] = df.index.year
+    # df['feature_dayofyear'] = df.index.dayofyear
 
+
+    df['feature_volume'] = df['volume']
+    df['feature_volume_week_mean'] = df['volume'].rolling(window=windows['week']).mean()
+    df['feature_volume_day_mean'] = df['volume'].rolling(window=windows['day']).mean()
+    df['feature_volume_day_std'] = df['volume'].rolling(window=windows['day']).std()
     df["feature_close"] = df["close"].pct_change()
     df["feature_open"] = df["open"] / df["close"]
     df["feature_high"] = df["high"] / df["close"]
@@ -47,9 +52,6 @@ def create_features(df: pd.DataFrame, granularity: str = '1h'):
     high_max = df['high'].rolling(window=14).max()
 
     df['feature_stochastic_oscillator'] = 100 * ((df['close'] - low_min) / (high_max - low_min))
-
-    # Remaining features are largely the same but you can adjust based on specific needs or observations.
-    # ...
 
     df.dropna(inplace=True)
     return df

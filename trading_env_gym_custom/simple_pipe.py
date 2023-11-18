@@ -204,7 +204,7 @@ def validate_and_roll_train(model_class, data_dir, save_dir, period='W'):
     eval_model = evaluate_model(best_model, eval_env, save_dir)
     print(f"Eval model: {eval_model}")
     eval_env.reset()
-    best_model.learn(total_timesteps=len(eval_df) * 4)
+    best_model.learn(total_timesteps=len(eval_df) * 2)
 
     best_model.set_env(test_env)
     test_model = evaluate_model(best_model, test_env, save_dir)
@@ -240,7 +240,7 @@ def validate_and_roll_train(model_class, data_dir, save_dir, period='W'):
         test_env_period.reset()
 
         # Train model on the current period
-        best_model.learn(total_timesteps=len(combined_df) * 4)
+        best_model.learn(total_timesteps=len(combined_df) * 2)
 
     print(f"Final Portfolio Value: {portfolio_value}")
     print(f"Total Compounded Return: {portfolio_value / 1000 - 1}")
@@ -412,12 +412,12 @@ set_seeds(42)
 # final_data_dir = "/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h_2015-2023"
 # save_dir = '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results'
 # sequential_training(data_dirs, final_data_dir, save_dir)
-# process_data("/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-5m.pkl",
-#              date_indexes=[pd.to_datetime("2023-08-01"), pd.to_datetime("2023-09-01")], granularity='5m')
+# process_data("/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-ETHUSD-1h_2015-2023.pkl",
+#              date_indexes=[pd.to_datetime("2022-01-01"), pd.to_datetime("2023-01-01")], granularity='1h')
 
-# train_and_save_pipeline('/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h_2015-2023',
+# train_and_save_pipeline('/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-ETHUSD-1h_2015-2023',
 # '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results')
 
-validate_and_roll_train(RecurrentPPO,
-                        '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h_2015-2023',
-                        '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results/run_20231118_101636')
+# validate_and_roll_train(RecurrentPPO,
+#                         '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-ETHUSD-1h_2015-2023',
+#                         '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results/run_20231118_190527')
