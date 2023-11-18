@@ -186,54 +186,65 @@ def load_best_model(model_class, save_dir):
     model = model_class.load(best_model_dir + "/best_model.zip")
     return model
 
-
-def validate_and_roll_train(model_class, data_dir, save_dir, period='W'):
+def validate_and_roll_train(model_class, data_dir, save_dir, period='M'):
     # Load data
     train_df = pd.read_pickle(os.path.join(data_dir, "train.pkl"))
     eval_df = pd.read_pickle(os.path.join(data_dir, "eval.pkl"))
     test_df = pd.read_pickle(os.path.join(data_dir, "test.pkl"))
 
-    # Split test data into periods (e.g., weeks)
+    # Split test data into periods (e.g., months)
     test_df['period'] = test_df.index.to_period(period)
     periods = test_df['period'].unique()
 
     # Load the best model
-    # unique_save_dir = os.path.join(save_dir, 'best_model')
     best_model = load_best_model(model_class, save_dir)
     _, eval_env, test_env = create_envs(train_df, eval_df, test_df)
 
     best_model.set_env(eval_env)
     eval_model = evaluate_model(best_model, eval_env, save_dir)
     print(f"Eval model: {eval_model}")
-    best_model.learn(total_timesteps=len(eval_df) * 2)
+    eval_env.reset()
+    best_model.learn(total_timesteps=len(eval_df) * 5)
 
     best_model.set_env(test_env)
     test_model = evaluate_model(best_model, test_env, save_dir)
     print(f"TEST not training model: {test_model}")
 
-    total_reward = []
+    portfolio_value = 1000  # Starting portfolio value
+    total_returns = []
 
-    for p in periods[1:]:
-        print(f"Training on period {p}")
-        # Create a subset of test data for the current period
-        period_df = test_df[test_df['period'].isin([p - 1, p])]
+    for i in range(1, len(periods)):
+        p = periods[i]
+        prev_p = periods[i - 1]
+        print(f"Training on period {p}. Portfolio value so far: {portfolio_value}")
+
+        # Create a subset of test data for the previous and current period
+        last_week_prev_period = test_df[test_df['period'] == prev_p].last('W')
+        period_df = test_df[test_df['period'] == p]
+        combined_df = pd.concat([last_week_prev_period, period_df])
 
         # Create environment for the combined data
-        _, _, test_env_period = create_envs(train_df, eval_df, period_df)
+        _, _, test_env_period = create_envs(train_df, eval_df, combined_df)
 
         # Set the environment to the current period
         best_model.set_env(test_env_period)
 
         # Evaluate model on the current period without training
-        total_reward.append(evaluate_model(best_model, test_env_period, save_dir))
+        period_return = evaluate_model(best_model, test_env_period, save_dir)
+        total_returns.append(period_return)
+
+        # Update portfolio value
+        portfolio_value *= (1 + period_return)
 
         # Reset the environment state if necessary before training
         test_env_period.reset()
 
         # Train model on the current period
-        best_model.learn(total_timesteps=len(period_df) * 2)
+        best_model.learn(total_timesteps=len(combined_df) * 1)
 
-    print(f"Total reward: {sum(total_reward)}")
+    print(f"Final Portfolio Value: {portfolio_value}")
+    print(f"Total Compounded Return: {portfolio_value / 1000 - 1}")
+
 
 
 def train_and_save_pipeline(data_dir, save_dir):
