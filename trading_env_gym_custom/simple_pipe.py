@@ -186,7 +186,7 @@ def load_best_model(model_class, save_dir):
     model = model_class.load(best_model_dir + "/best_model.zip")
     return model
 
-def validate_and_roll_train(model_class, data_dir, save_dir, period='M'):
+def validate_and_roll_train(model_class, data_dir, save_dir, period='W'):
     # Load data
     train_df = pd.read_pickle(os.path.join(data_dir, "train.pkl"))
     eval_df = pd.read_pickle(os.path.join(data_dir, "eval.pkl"))
@@ -204,7 +204,7 @@ def validate_and_roll_train(model_class, data_dir, save_dir, period='M'):
     eval_model = evaluate_model(best_model, eval_env, save_dir)
     print(f"Eval model: {eval_model}")
     eval_env.reset()
-    best_model.learn(total_timesteps=len(eval_df) * 5)
+    best_model.learn(total_timesteps=len(eval_df) * 4)
 
     best_model.set_env(test_env)
     test_model = evaluate_model(best_model, test_env, save_dir)
@@ -240,7 +240,7 @@ def validate_and_roll_train(model_class, data_dir, save_dir, period='M'):
         test_env_period.reset()
 
         # Train model on the current period
-        best_model.learn(total_timesteps=len(combined_df) * 1)
+        best_model.learn(total_timesteps=len(combined_df) * 4)
 
     print(f"Final Portfolio Value: {portfolio_value}")
     print(f"Total Compounded Return: {portfolio_value / 1000 - 1}")
