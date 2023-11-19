@@ -204,7 +204,7 @@ def validate_and_roll_train(model_class, data_dir, save_dir, period='W'):
     eval_model = evaluate_model(best_model, eval_env, save_dir)
     print(f"Eval model: {eval_model}")
     eval_env.reset()
-    best_model.learn(total_timesteps=len(eval_df) * 2)
+    best_model.learn(total_timesteps=len(eval_df) * 5)
 
     best_model.set_env(test_env)
     test_model = evaluate_model(best_model, test_env, save_dir)
@@ -240,7 +240,7 @@ def validate_and_roll_train(model_class, data_dir, save_dir, period='W'):
         test_env_period.reset()
 
         # Train model on the current period
-        best_model.learn(total_timesteps=len(combined_df) * 2)
+        best_model.learn(total_timesteps=len(combined_df) * 5)
 
     print(f"Final Portfolio Value: {portfolio_value}")
     print(f"Total Compounded Return: {portfolio_value / 1000 - 1}")
@@ -258,7 +258,6 @@ def train_and_save_pipeline(data_dir, save_dir):
 
     # Load data
     train_df = pd.read_pickle(os.path.join(data_dir, "train.pkl"))
-    train_df = train_df.tail(500_000)
     eval_df = pd.read_pickle(os.path.join(data_dir, "eval.pkl"))
     test_df = pd.read_pickle(os.path.join(data_dir, "test.pkl"))
 
@@ -270,42 +269,31 @@ def train_and_save_pipeline(data_dir, save_dir):
     eval_callback = EvalCallback(eval_env,
                                  best_model_save_path=os.path.join(unique_save_dir, "best_model"),
                                  log_path=os.path.join(unique_save_dir, "results"),
-                                 eval_freq=50_000,
+                                 eval_freq=20_000,
                                  n_eval_episodes=2,
                                  deterministic=True, render=False)
-    total_timesteps = 300_000
+    total_timesteps = 500_000
     learning_rate_schedule = linear_schedule(3e-4, 2.5e-5)
     clip_range_schedule = linear_schedule(0.3, 0.1)
     # ent_coef_schedule = linear_schedule(0.1, 0.01)
 
     hyperparams = {
-        'learning_rate': 2.5e-4,
+        'learning_rate': 7.5e-5,
         'n_steps': 2048,
-        'batch_size': 64,
+        'batch_size': 128,
         'n_epochs': 10,
         'gamma': 0.99,
         'gae_lambda': 0.95,
         'clip_range': 0.3,
         'ent_coef': 0.1,
         'vf_coef': 0.5,
-        'max_grad_norm': 0.5,
+        'max_grad_norm': 0.8,
     }
     # 2. Training
     # model = model_class('MlpPolicy', train_env, verbose=1, **hyperparams, tensorboard_log=base_log_path)
     model = RecurrentPPO("MlpLstmPolicy", train_env, **hyperparams, verbose=1, tensorboard_log=base_log_path)
     model.learn(total_timesteps=total_timesteps, callback=eval_callback)
 
-    # validate_and_roll_train(model_class, data_dir, unique_save_dir)
-
-    # best_model = load_best_model(model_class, unique_save_dir)
-    # best_model.set_env(eval_env)
-    # best_model.learn(total_timesteps=len(eval_df))
-    # # first evaluate on eval test env no training
-    # evaluate_model(best_model, eval_env, unique_save_dir)
-    # # then evaluate on test env no training
-    # evaluate_model(best_model, test_env, unique_save_dir)
-    # # finally do a final training on the test env
-    # best_model.learn(total_timesteps=len(test_df))
 
 
 
@@ -412,12 +400,12 @@ set_seeds(42)
 # final_data_dir = "/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h_2015-2023"
 # save_dir = '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results'
 # sequential_training(data_dirs, final_data_dir, save_dir)
-# process_data("/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-ETHUSD-1h_2015-2023.pkl",
-#              date_indexes=[pd.to_datetime("2022-01-01"), pd.to_datetime("2023-01-01")], granularity='1h')
+# process_data("/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-ETHUSD-1h.pkl",
+#              date_indexes=[pd.to_datetime("2022-09-01"), pd.to_datetime("2023-01-01")], granularity='1h')
 
-# train_and_save_pipeline('/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-ETHUSD-1h_2015-2023',
-# '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results')
+# train_and_save_pipeline('/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h',
+# '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results/BTCUSD_1h')
 
-# validate_and_roll_train(RecurrentPPO,
-#                         '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-ETHUSD-1h_2015-2023',
-#                         '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results/run_20231118_190527')
+validate_and_roll_train(RecurrentPPO,
+                        '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h',
+                        '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results/BTCUSD_1h/run_20231119_140948')
