@@ -1,8 +1,9 @@
-import pandas as pd
-import numpy as np
-from sklearn.preprocessing import StandardScaler
-import os
 import joblib
+import numpy as np
+import pandas as pd
+from sklearn.preprocessing import StandardScaler
+
+
 def create_features(df: pd.DataFrame, granularity: str = '1h'):
     # Define window sizes for different granularities
     window_sizes = {
@@ -73,6 +74,44 @@ def simple_reward(history):
     log_return = np.log(portfolio_valuation[-1] / portfolio_valuation[-2])
     return log_return
     # return (portfolio_valuation[-1] - portfolio_valuation[-2]) / portfolio_valuation[-2]
+
+
+def adjusted_reward(history):
+    window_size = 24
+
+    close_prices = np.array(history["data_close"], dtype=float)
+    protfolio_valuation = np.array(history["portfolio_valuation"], dtype=float)
+    # Calculate log returns
+    log_returns = np.diff(np.log(protfolio_valuation))
+    # Calculate rolling volatility (standard deviation of log returns)
+    if len(log_returns) < window_size:
+        # Not enough data to calculate volatility
+        return 0
+    volatility = np.std(log_returns[-window_size:])
+    #
+    # # Define the reward based on the last log return
+    last_log_return = log_returns[-1] if len(log_returns) > 0 else 0
+    #
+    # # Define scaling factors for volatility
+    volatility_scaling = 1 / (1 + volatility)  # Scales up with low volatility, down with high
+    #
+    # # Define a small penalty for not trading
+    # no_trade_penalty = -0.001 if last_log_return == 0 else 0
+
+    # Define a function to handle negative rewards differently
+    # def asymmetric_reward_scaling(return_value):
+    #     if return_value >= 0:
+    #         # Positive rewards are linear
+    #         return return_value
+    #     else:
+    #         # Negative rewards grow faster than linear
+    #         return return_value ** 2  # Squaring to magnify losses
+
+    # Calculate the final reward
+    final_reward = last_log_return * volatility_scaling #+ no_trade_penalty
+
+    return final_reward
+
 
 def custom_reward_function(history, window=252 * 24, risk_free_rate=0.03, non_trade_penalty=0.0002,
                            consecutive_non_trade_limit=24):

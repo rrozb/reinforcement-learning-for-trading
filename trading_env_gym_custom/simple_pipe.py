@@ -15,7 +15,7 @@ from stable_baselines3.common.monitor import Monitor
 from custom_env import TradingEnv
 from trading_env_gym_custom.evaluation import evaluate_model
 from trading_env_gym_custom.features_eng import create_features, split_data, simple_reward, CustomScaler, \
-    split_data_by_dates
+    split_data_by_dates, adjusted_reward
 
 print(TradingEnv)
 register(
@@ -125,7 +125,7 @@ def create_envs(train_df, eval_df, test_df):
                                 positions=[-1, 0, 1],
                                 trading_fees=0.01 / 100,
                                 borrow_interest_rate=0.0003 / 100,
-                                reward_function=simple_reward,
+                                reward_function=adjusted_reward,
                                 windows=24 * 7,
 
                                 ))
@@ -135,7 +135,7 @@ def create_envs(train_df, eval_df, test_df):
                                  positions=[-1, 0, 1],
                                  trading_fees=0,
                                  borrow_interest_rate=0,
-                                 reward_function=simple_reward,
+                                 reward_function=adjusted_reward,
                                  windows=24 * 7,
 
                                  ))
@@ -146,7 +146,7 @@ def create_envs(train_df, eval_df, test_df):
                                 positions=[-1, 0, 1],
                                 trading_fees=0.01 / 100,  # 0.01% per stock buy / sell (Binance fees)
                                 borrow_interest_rate=0.0003 / 100,  # 0.0003% per timestep (one timestep = 1h here),
-                                reward_function=simple_reward,
+                                reward_function=adjusted_reward,
                                 windows=24 * 7,
                                 ))
 
@@ -204,7 +204,7 @@ def validate_and_roll_train(model_class, data_dir, save_dir, period='W'):
     eval_model = evaluate_model(best_model, eval_env, save_dir)
     print(f"Eval model: {eval_model}")
     eval_env.reset()
-    best_model.learn(total_timesteps=len(eval_df) * 5)
+    best_model.learn(total_timesteps=len(eval_df) * 2)
 
     best_model.set_env(test_env)
     test_model = evaluate_model(best_model, test_env, save_dir)
@@ -240,7 +240,7 @@ def validate_and_roll_train(model_class, data_dir, save_dir, period='W'):
         test_env_period.reset()
 
         # Train model on the current period
-        best_model.learn(total_timesteps=len(combined_df) * 5)
+        best_model.learn(total_timesteps=len(combined_df) * 2)
 
     print(f"Final Portfolio Value: {portfolio_value}")
     print(f"Total Compounded Return: {portfolio_value / 1000 - 1}")
@@ -269,7 +269,7 @@ def train_and_save_pipeline(data_dir, save_dir):
     eval_callback = EvalCallback(eval_env,
                                  best_model_save_path=os.path.join(unique_save_dir, "best_model"),
                                  log_path=os.path.join(unique_save_dir, "results"),
-                                 eval_freq=20_000,
+                                 eval_freq=5_000,
                                  n_eval_episodes=2,
                                  deterministic=True, render=False)
     total_timesteps = 500_000
@@ -408,4 +408,4 @@ set_seeds(42)
 
 validate_and_roll_train(RecurrentPPO,
                         '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h',
-                        '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results/BTCUSD_1h/run_20231119_140948')
+                        '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results/BTCUSD_1h/run_20231119_155749')
