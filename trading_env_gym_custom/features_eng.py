@@ -75,6 +75,11 @@ def simple_reward(history):
     return log_return
     # return (portfolio_valuation[-1] - portfolio_valuation[-2]) / portfolio_valuation[-2]
 
+def absolute_reward(history):
+    portfolio_valuation = history["portfolio_valuation"]
+    if len(portfolio_valuation) < 2:
+        return 0
+    return portfolio_valuation[-1] - portfolio_valuation[-2]
 
 def adjusted_reward(history):
     window_size = 24
