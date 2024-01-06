@@ -16,7 +16,7 @@ from custom_env import TradingEnv
 from trading_env_gym_custom.evaluation import evaluate_model
 from trading_env_gym_custom.features_eng import create_features, split_data, simple_reward, CustomScaler, \
     split_data_by_dates, adjusted_reward
-
+from stable_baselines3.common.evaluation import evaluate_policy
 print(TradingEnv)
 register(
     id='TradingEnv',  # Unique ID for your environment
@@ -124,8 +124,8 @@ def create_envs(train_df, eval_df, test_df):
                                 df=eval_df,  # Your validation dataframe
                                 positions=[-1, 0, 1],
                                 trading_fees=0.01 / 100,
-                                borrow_interest_rate=0.0003 / 100,
-                                reward_function=adjusted_reward,
+                                # borrow_interest_rate=0.0003 / 100,
+                                reward_function=simple_reward,
                                 windows=24 * 7,
 
                                 ))
@@ -133,9 +133,9 @@ def create_envs(train_df, eval_df, test_df):
                                  name="BTCUSD",
                                  df=train_df,
                                  positions=[-1, 0, 1],
-                                 trading_fees=0,
+                                 trading_fees=0.01 / 100,
                                  borrow_interest_rate=0,
-                                 reward_function=adjusted_reward,
+                                 reward_function=simple_reward,
                                  windows=24 * 7,
 
                                  ))
@@ -145,8 +145,8 @@ def create_envs(train_df, eval_df, test_df):
                                 df=test_df,
                                 positions=[-1, 0, 1],
                                 trading_fees=0.01 / 100,  # 0.01% per stock buy / sell (Binance fees)
-                                borrow_interest_rate=0.0003 / 100,  # 0.0003% per timestep (one timestep = 1h here),
-                                reward_function=adjusted_reward,
+                                # borrow_interest_rate=0.0003 / 100,  # 0.0003% per timestep (one timestep = 1h here),
+                                reward_function=simple_reward,
                                 windows=24 * 7,
                                 ))
 
@@ -155,7 +155,7 @@ def create_envs(train_df, eval_df, test_df):
 def create_multi_asset_envs(train_df, eval_df, test_df):
     eval_env = Monitor(gym.make("MultiAssetTradingEnv",
                                 name="eval_train",
-                                df=eval_df, 
+                                df=eval_df,
                                 trading_fees=0.01 / 100,
                                 borrow_interest_rate=0,
                                 reward_function=simple_reward,
@@ -187,10 +187,11 @@ def load_best_model(model_class, save_dir):
     return model
 
 def validate_and_roll_train(model_class, data_dir, save_dir, period='W'):
+    repeat_dataset = 3
     # Load data
     train_df = pd.read_pickle(os.path.join(data_dir, "train.pkl"))
     eval_df = pd.read_pickle(os.path.join(data_dir, "eval.pkl"))
-    test_df = pd.read_pickle(os.path.join(data_dir, "test.pkl"))
+    test_df = pd.read_pickle(os.path.join(data_dir, "test.pkl"))[:24*7*4]
 
     # Split test data into periods (e.g., months)
     test_df['period'] = test_df.index.to_period(period)
@@ -198,49 +199,66 @@ def validate_and_roll_train(model_class, data_dir, save_dir, period='W'):
 
     # Load the best model
     best_model = load_best_model(model_class, save_dir)
+    best_model.tensorboard_log = None
     _, eval_env, test_env = create_envs(train_df, eval_df, test_df)
 
     best_model.set_env(eval_env)
-    eval_model = evaluate_model(best_model, eval_env, save_dir)
-    print(f"Eval model: {eval_model}")
+    mean_reward, std_reward = evaluate_policy(best_model,
+                                              eval_env,
+                                              n_eval_episodes=1,
+                                              deterministic=True,
+                                              return_episode_rewards=True)
+
+    print(f"Mean reward before fine tuning: {mean_reward} +/- {std_reward}.")
     eval_env.reset()
-    best_model.learn(total_timesteps=len(eval_df) * 2)
+    best_model.learn(total_timesteps=len(eval_df) * repeat_dataset,)
 
     best_model.set_env(test_env)
-    test_model = evaluate_model(best_model, test_env, save_dir)
-    print(f"TEST not training model: {test_model}")
+    mean_reward, std_reward = evaluate_policy(best_model,
+                                              eval_env,
+                                              n_eval_episodes=1,
+                                              deterministic=True,
+                                              return_episode_rewards=True)
 
+    print(f"Mean reward after fine tuning: {mean_reward} +/- {std_reward}.")
+    mean_reward, std_reward = evaluate_policy(best_model,
+                                              test_env,
+                                              n_eval_episodes=1,
+                                              deterministic=True,
+                                              return_episode_rewards=True)
+
+    print(f"Test Mean reward after fine tuning: {mean_reward} +/- {std_reward}.")
     portfolio_value = 1000  # Starting portfolio value
     total_returns = []
 
-    for i in range(1, len(periods)):
-        p = periods[i]
-        prev_p = periods[i - 1]
-        print(f"Training on period {p}. Portfolio value so far: {portfolio_value}")
-
-        # Create a subset of test data for the previous and current period
-        last_week_prev_period = test_df[test_df['period'] == prev_p].last('W')
-        period_df = test_df[test_df['period'] == p]
-        combined_df = pd.concat([last_week_prev_period, period_df])
-
-        # Create environment for the combined data
-        _, _, test_env_period = create_envs(train_df, eval_df, combined_df)
-
-        # Set the environment to the current period
-        best_model.set_env(test_env_period)
-
-        # Evaluate model on the current period without training
-        period_return = evaluate_model(best_model, test_env_period, save_dir)
-        total_returns.append(period_return)
-
-        # Update portfolio value
-        portfolio_value *= (1 + period_return)
-
-        # Reset the environment state if necessary before training
-        test_env_period.reset()
-
-        # Train model on the current period
-        best_model.learn(total_timesteps=len(combined_df) * 2)
+    # for i in range(1, len(periods)):
+    #     p = periods[i]
+    #     prev_p = periods[i - 1]
+    #     print(f"Training on period {p}. Portfolio value so far: {portfolio_value}")
+    #
+    #     # Create a subset of test data for the previous and current period
+    #     last_week_prev_period = test_df[test_df['period'] == prev_p].last('W')
+    #     period_df = test_df[test_df['period'] == p]
+    #     combined_df = pd.concat([last_week_prev_period, period_df])
+    #
+    #     # Create environment for the combined data
+    #     _, _, test_env_period = create_envs(train_df, eval_df, combined_df)
+    #
+    #     # Set the environment to the current period
+    #     best_model.set_env(test_env_period)
+    #
+    #     # Evaluate model on the current period without training
+    #     period_return = evaluate_model(best_model, test_env_period, save_dir)
+    #     total_returns.append(period_return)
+    #
+    #     # Update portfolio value
+    #     portfolio_value *= (1 + period_return)
+    #
+    #     # Reset the environment state if necessary before training
+    #     test_env_period.reset()
+    #
+    #     # Train model on the current period
+    #     best_model.learn(total_timesteps=len(combined_df) * repeat_dataset)
 
     print(f"Final Portfolio Value: {portfolio_value}")
     print(f"Total Compounded Return: {portfolio_value / 1000 - 1}")
@@ -269,10 +287,10 @@ def train_and_save_pipeline(data_dir, save_dir):
     eval_callback = EvalCallback(eval_env,
                                  best_model_save_path=os.path.join(unique_save_dir, "best_model"),
                                  log_path=os.path.join(unique_save_dir, "results"),
-                                 eval_freq=5_000,
-                                 n_eval_episodes=2,
+                                 eval_freq=20_000,
+                                 n_eval_episodes=1,
                                  deterministic=True, render=False)
-    total_timesteps = 500_000
+    total_timesteps = len(train_df)*1
     learning_rate_schedule = linear_schedule(3e-4, 2.5e-5)
     clip_range_schedule = linear_schedule(0.3, 0.1)
     # ent_coef_schedule = linear_schedule(0.1, 0.01)
@@ -297,95 +315,6 @@ def train_and_save_pipeline(data_dir, save_dir):
 
 
 
-# def test_with_retraining(data_dir, unique_save_dir, model_class=PPO):
-#     # Load data
-#     train_df = pd.read_pickle(os.path.join(data_dir, "train.pkl"))
-#     eval_df = pd.read_pickle(os.path.join(data_dir, "eval.pkl"))
-#     test_df = pd.read_pickle(os.path.join(data_dir, "test.pkl"))
-#
-#     # split test_df
-#
-#     # Create environments
-#     test_env = Monitor(gym.make("TradingEnv",
-#                                 name="eval_BTCUSD",
-#                                 df=test_df,
-#                                 positions=[-1, 0, 1],
-#                                 trading_fees=0.01 / 100,  # 0.01% per stock buy / sell (Binance fees)
-#                                 borrow_interest_rate=0.0003 / 100,  # 0.0003% per timestep (one timestep = 1h here),
-#                                 reward_function=simple_reward
-#                                 ))
-
-# def sequential_training(data_dirs, final_data_dir, save_dir, model_class=PPO):
-#     # Initialize model
-#     model = None
-#
-#     hyperparams = {
-#         'learning_rate': 2.5e-5,
-#         'n_steps': 2048,
-#         'batch_size': 64,
-#         'n_epochs': 10,
-#         'gamma': 0.99,
-#         'gae_lambda': 0.95,
-#         'clip_range': 0.3,
-#         'ent_coef': 0.1,
-#         'vf_coef': 0.5,
-#         'max_grad_norm': 0.5,
-#     }
-#     base_log_path = f'./tensorboard_logs/{model_class.__name__}'
-#     # Train on each dataset sequentially
-#     for data_dir in data_dirs:
-#         print(f"Training on {data_dir.split('/')[-1]}")
-#         # Update save_dir for each run
-#         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-#         unique_save_dir = os.path.join(save_dir, f'run_{timestamp}')
-#         os.makedirs(unique_save_dir, exist_ok=True)
-#
-#         train_df = pd.read_pickle(os.path.join(data_dir, "train.pkl"))
-#         eval_df = pd.read_pickle(os.path.join(data_dir, "eval.pkl"))
-#         test_df = pd.read_pickle(os.path.join(data_dir, "test.pkl"))
-#
-#         train_env, eval_env, test_env = create_envs(train_df, eval_df, test_df)
-#
-#         if model is None:
-#             # First iteration: create a new model
-#             model = model_class('MlpPolicy', train_env, tensorboard_log=base_log_path, verbose=1, **hyperparams)
-#         else:
-#             # Subsequent iterations: continue training the existing model
-#             model.set_env(train_env)
-#
-#         model.learn(total_timesteps=len(train_df) * 2, tb_log_name=f"run_{model_class}_{timestamp}")
-#
-#     # After sequential training, fine-tune on the final dataset
-#     final_train_df = pd.read_pickle(os.path.join(final_data_dir, "train.pkl"))
-#     final_eval_df = pd.read_pickle(os.path.join(final_data_dir, "eval.pkl"))
-#     final_test_df = pd.read_pickle(os.path.join(final_data_dir, "test.pkl"))
-#
-#     final_train_env, final_eval_env, _ = create_envs(final_train_df, final_eval_df, final_test_df)
-#
-#     model.set_env(final_train_env)
-#
-#     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-#     unique_save_dir = os.path.join(save_dir, f'run_pre_{timestamp}')
-#     model_class = PPO
-#     if not os.path.exists(unique_save_dir):
-#         os.makedirs(unique_save_dir)
-#
-#     # Load the best model based on validation before final training
-#
-#     eval_callback = EvalCallback(final_eval_env,
-#                                  best_model_save_path=os.path.join(unique_save_dir, "best_model"),
-#                                  log_path=os.path.join(unique_save_dir, "results"),
-#                                  eval_freq=5_000,
-#                                  deterministic=True, render=False)
-#
-#     # Final training
-#     model.learn(total_timesteps=500_0000, callback=eval_callback, tb_log_name=f"run_final_{model_class}_{timestamp}")
-#
-#     # load best model
-#     model = model_class.load(os.path.join(unique_save_dir, "best_model"))
-#     # train it on eval data
-#     model.set_env(final_eval_env)
-#     model.learn(total_timesteps=len(final_eval_df), tb_log_name=f"run_eval_{model_class}_{timestamp}")
 
 
 set_seeds(42)
@@ -400,12 +329,12 @@ set_seeds(42)
 # final_data_dir = "/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h_2015-2023"
 # save_dir = '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results'
 # sequential_training(data_dirs, final_data_dir, save_dir)
-# process_data("/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-ETHUSD-1h.pkl",
-#              date_indexes=[pd.to_datetime("2022-09-01"), pd.to_datetime("2023-01-01")], granularity='1h')
+# process_data("/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h.pkl",
+#              date_indexes=[pd.to_datetime("2022-06-01"), pd.to_datetime("2023-01-01")], granularity='1h')
 
 # train_and_save_pipeline('/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h',
 # '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results/BTCUSD_1h')
 
 validate_and_roll_train(RecurrentPPO,
                         '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h',
-                        '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results/BTCUSD_1h/run_20231119_155749')
+                        '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results/BTCUSD_1h/run_20240104_183338')

@@ -16,10 +16,10 @@ def create_features(df: pd.DataFrame, granularity: str = '1h'):
     # Basic time features
     df['feature_hour'] = df.index.hour
     df['feature_dayofweek'] = df.index.dayofweek
-    df['feature_month'] = df.index.month
 
     # Volume features
     df['feature_volume'] = df['volume']
+    df['feature_volume_pct_change'] = df['volume'].pct_change()
     df['feature_volume_week_mean'] = df['volume'].rolling(window=windows['week']).mean()
     df['feature_volume_day_mean'] = df['volume'].rolling(window=windows['day']).mean()
     df['feature_volume_day_std'] = df['volume'].rolling(window=windows['day']).std()
@@ -30,36 +30,36 @@ def create_features(df: pd.DataFrame, granularity: str = '1h'):
     df["feature_high"] = df["high"] / df["close"]
     df["feature_low"] = df["low"] / df["close"]
 
-    # Return features
-    df['feature_return_1h'] = df['close'].pct_change(windows['short']//24)  # Assuming 'short' represents one day
-    df['feature_return_24h'] = df['close'].pct_change(windows['day'])
+    # # Return features
+    # df['feature_return_1h'] = df['close'].pct_change(windows['short']//24)  # Assuming 'short' represents one day
+    # df['feature_return_24h'] = df['close'].pct_change(windows['day'])
 
     # Volatility
     df['feature_volatility_24h'] = df['feature_close'].rolling(window=windows['day']).std()
 
     # Technical indicators
-    mean_close = df['close'].rolling(window=windows['day']).mean()
-    std_close = df['close'].rolling(window=windows['day']).std()
-    df['feature_large_swing'] = ((df['close'] - mean_close).abs() > 2.5 * std_close).astype(int)
-
-    df['feature_short_MA'] = df['close'].rolling(window=windows['short']).mean()
-    df['feature_long_MA'] = df['close'].rolling(window=windows['long']).mean()
-
-    # Market trend
-    df['feature_market_trend'] = np.where(df['feature_short_MA'] > df['feature_long_MA'], 1,
-                                          np.where(df['feature_short_MA'] < df['feature_long_MA'], -1, 0))
-
-    # Support and Resistance
-    df['feature_resistance'] = df['high'].rolling(window=windows['half_day']*2).max()
-    df['feature_support'] = df['low'].rolling(window=windows['half_day']*2).min()
-
-    df['feature_distance_from_resistance'] = df['close'] - df['feature_resistance']
-    df['feature_distance_from_support'] = df['close'] - df['feature_support']
-
-    # Stochastic Oscillator
-    low_min = df['low'].rolling(window=windows['short']).min()
-    high_max = df['high'].rolling(window=windows['short']).max()
-    df['feature_stochastic_oscillator'] = 100 * ((df['close'] - low_min) / (high_max - low_min))
+    # mean_close = df['close'].rolling(window=windows['day']).mean()
+    # std_close = df['close'].rolling(window=windows['day']).std()
+    # df['feature_large_swing'] = ((df['close'] - mean_close).abs() > 2.5 * std_close).astype(int)
+    #
+    # df['feature_short_MA'] = df['close'].rolling(window=windows['short']).mean()
+    # df['feature_long_MA'] = df['close'].rolling(window=windows['long']).mean()
+    #
+    # # Market trend
+    # df['feature_market_trend'] = np.where(df['feature_short_MA'] > df['feature_long_MA'], 1,
+    #                                       np.where(df['feature_short_MA'] < df['feature_long_MA'], -1, 0))
+    #
+    # # Support and Resistance
+    # df['feature_resistance'] = df['high'].rolling(window=windows['half_day']*2).max()
+    # df['feature_support'] = df['low'].rolling(window=windows['half_day']*2).min()
+    #
+    # df['feature_distance_from_resistance'] = df['close'] - df['feature_resistance']
+    # df['feature_distance_from_support'] = df['close'] - df['feature_support']
+    #
+    # # Stochastic Oscillator
+    # low_min = df['low'].rolling(window=windows['short']).min()
+    # high_max = df['high'].rolling(window=windows['short']).max()
+    # df['feature_stochastic_oscillator'] = 100 * ((df['close'] - low_min) / (high_max - low_min))
 
     # Clean up data
     df.dropna(inplace=True)
@@ -104,8 +104,8 @@ def adjusted_reward(history):
     #         # Positive rewards are linear
     #         return return_value
     #     else:
-    #         # Negative rewards grow faster than linear
-    #         return return_value ** 2  # Squaring to magnify losses
+    #         # negative rewards scaled to penalize more
+    #         return return_value * 2
 
     # Calculate the final reward
     final_reward = last_log_return * volatility_scaling #+ no_trade_penalty
