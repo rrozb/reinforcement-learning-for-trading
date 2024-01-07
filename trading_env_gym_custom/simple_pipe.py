@@ -10,13 +10,12 @@ from gymnasium import register
 from sb3_contrib import RecurrentPPO
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import EvalCallback
+from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.monitor import Monitor
 
 from custom_env import TradingEnv
-from trading_env_gym_custom.evaluation import evaluate_model
 from trading_env_gym_custom.features_eng import create_features, split_data, simple_reward, CustomScaler, \
-    split_data_by_dates, adjusted_reward, absolute_reward
-from stable_baselines3.common.evaluation import evaluate_policy
+    split_data_by_dates, absolute_reward
 
 print(TradingEnv)
 register(
@@ -29,6 +28,22 @@ register(
     entry_point='trading_env_gym_custom.custom_env:MultiAssetPortfolio',
     # Change 'path_to_your_module' to the module path of your environment
 )
+
+
+def segment_and_shuffle(df, segment_size='1M'):
+    # Assuming df has a datetime index
+    segments = [group for _, group in df.groupby(pd.Grouper(freq=segment_size))]
+    np.random.shuffle(segments)
+    return pd.concat(segments)
+
+
+def add_noise(df, noise_level=0.01):
+    noisy_df = df.copy()
+    for col in df.columns:
+        if df[col].dtype == 'float64':  # Add noise only to numerical columns
+            noise = np.random.normal(0, noise_level, size=df[col].shape)
+            noisy_df[col] += noise
+    return noisy_df
 
 
 def get_warmup_data(test_df, current_period, warmup_length=1):
@@ -139,34 +154,6 @@ def create_envs(train_df, eval_df, test_df, reward_function=simple_reward):
     return train_env, eval_env, test_env
 
 
-def create_multi_asset_envs(train_df, eval_df, test_df):
-    eval_env = Monitor(gym.make("MultiAssetTradingEnv",
-                                name="eval_train",
-                                df=eval_df,
-                                trading_fees=0.01 / 100,
-                                borrow_interest_rate=0,
-                                reward_function=simple_reward,
-
-                                ))
-    train_env = Monitor(gym.make("MultiAssetTradingEnv",
-                                 name="BTCUSD",
-                                 df=train_df,
-
-                                 trading_fees=0.01 / 100,
-                                 borrow_interest_rate=0,
-                                 reward_function=simple_reward
-                                 ))
-
-    test_env = Monitor(gym.make("MultiAssetTradingEnv",
-                                name="eval_BTCUSD",
-                                df=test_df,
-                                trading_fees=0.01 / 100,
-                                borrow_interest_rate=0,
-                                reward_function=simple_reward
-                                ))
-
-    return train_env, eval_env, test_env
-
 
 def load_best_model(model_class, save_dir):
     # Load the best model based on validation before final training
@@ -254,7 +241,7 @@ def validate_and_roll_train(model_class, data_dir, save_dir, period='W'):
         test_env_period.reset()
 
         # Train model on the current period
-        best_model.learn(total_timesteps=len(period_df)*3)
+        best_model.learn(total_timesteps=len(period_df))
 
     print(f"Final Portfolio Value: {portfolio_value}")
     # print(f"Total Compounded Return: {portfolio_value / 1000 - 1}")
@@ -274,18 +261,19 @@ def train_and_save_pipeline(data_dir, save_dir):
     eval_df = pd.read_pickle(os.path.join(data_dir, "eval.pkl"))
     test_df = pd.read_pickle(os.path.join(data_dir, "test.pkl"))
 
+
     # Create environments
-    train_env, eval_env, test_env = create_envs(train_df, eval_df, test_df, absolute_reward)
+    train_env, eval_env, test_env = create_envs(train_df, eval_df, test_df, simple_reward)
 
     base_log_path = f'./tensorboard_logs/{model_class.__name__}/{timestamp}/'
 
     eval_callback = EvalCallback(eval_env,
                                  best_model_save_path=os.path.join(unique_save_dir, "best_model"),
                                  log_path=os.path.join(unique_save_dir, "results"),
-                                 eval_freq=20_000,
+                                 eval_freq=len(train_df),
                                  n_eval_episodes=1,
                                  deterministic=True, render=False)
-    total_timesteps = len(train_df) * 5
+    total_timesteps = len(train_df) * 10
     learning_rate_schedule = linear_schedule(3e-4, 2.5e-5)
     clip_range_schedule = linear_schedule(0.3, 0.1)
     # ent_coef_schedule = linear_schedule(0.1, 0.01)
@@ -303,6 +291,7 @@ def train_and_save_pipeline(data_dir, save_dir):
         'max_grad_norm': 0.8,
     }
     # 2. Training
+
     # model = model_class('MlpPolicy', train_env, verbose=1, **hyperparams, tensorboard_log=base_log_path)
     model = RecurrentPPO("MlpLstmPolicy", train_env, **hyperparams, verbose=1, tensorboard_log=base_log_path)
     model.learn(total_timesteps=total_timesteps, callback=eval_callback)
@@ -323,9 +312,10 @@ set_seeds(42)
 # process_data("/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h.pkl",
 #              date_indexes=[pd.to_datetime("2022-06-01"), pd.to_datetime("2023-01-01")], granularity='1h')
 
-# train_and_save_pipeline('/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h',
-# '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results/BTCUSD_1h')
+train_and_save_pipeline(
+    '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h',
+    '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results/BTCUSD_1h')
 
-validate_and_roll_train(RecurrentPPO,
-                        '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h',
-                        '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results/BTCUSD_1h/run_20240106_085606')
+# validate_and_roll_train(RecurrentPPO,
+#                         '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h',
+#                         '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results/BTCUSD_1h/run_20240107_115249')

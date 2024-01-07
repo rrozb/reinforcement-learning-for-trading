@@ -81,76 +81,28 @@ def absolute_reward(history):
         return 0
     return portfolio_valuation[-1] - portfolio_valuation[-2]
 
-def adjusted_reward(history):
-    window_size = 24
+import numpy as np
 
-    close_prices = np.array(history["data_close"], dtype=float)
-    protfolio_valuation = np.array(history["portfolio_valuation"], dtype=float)
-    # Calculate log returns
-    log_returns = np.diff(np.log(protfolio_valuation))
-    # Calculate rolling volatility (standard deviation of log returns)
-    if len(log_returns) < window_size:
-        # Not enough data to calculate volatility
-        return 0
-    volatility = np.std(log_returns[-window_size:])
-    #
-    # # Define the reward based on the last log return
-    last_log_return = log_returns[-1] if len(log_returns) > 0 else 0
-    #
-    # # Define scaling factors for volatility
-    volatility_scaling = 1 / (1 + volatility)  # Scales up with low volatility, down with high
-    #
-    # # Define a small penalty for not trading
-    # no_trade_penalty = -0.001 if last_log_return == 0 else 0
-
-    # Define a function to handle negative rewards differently
-    # def asymmetric_reward_scaling(return_value):
-    #     if return_value >= 0:
-    #         # Positive rewards are linear
-    #         return return_value
-    #     else:
-    #         # negative rewards scaled to penalize more
-    #         return return_value * 2
-
-    # Calculate the final reward
-    final_reward = last_log_return * volatility_scaling #+ no_trade_penalty
-
-    return final_reward
-
-
-def custom_reward_function(history, window=252 * 24, risk_free_rate=0.03, non_trade_penalty=0.0002,
-                           consecutive_non_trade_limit=24):
-    # Get the portfolio valuations from the history
+def adjusted_reward(history, lookback_period=24):
     portfolio_valuation = history["portfolio_valuation"]
-
-    # Handle the first step (where we can't compute returns)
     if len(portfolio_valuation) < 2:
         return 0
 
-    # Calculate hourly returns from the portfolio valuation
-    returns = np.diff(portfolio_valuation) / portfolio_valuation[:-1]
-    returns = returns[-window:]
+    # Calculate dollar reward
+    dollar_reward = portfolio_valuation[-1] - portfolio_valuation[-2]
 
-    # Calculate Sortino ratio for hourly data
-    hourly_risk_free_rate = risk_free_rate / (252 * 24)
-    expected_return = np.mean(returns)
-    downside_returns = returns[returns < hourly_risk_free_rate]
-
-    if len(downside_returns) < 2:
-        downside_std = 0.0001
+    # Calculate volatility (standard deviation) of recent portfolio changes
+    if len(portfolio_valuation) > lookback_period:
+        recent_changes = [portfolio_valuation[i] - portfolio_valuation[i - 1] for i in range(-lookback_period, 0)]
+        volatility = np.std(recent_changes)
     else:
-        downside_std = np.std(downside_returns, ddof=1)
-        downside_std = max(downside_std, 0.0001)
+        volatility = np.std(portfolio_valuation)  # Use whole history if not enough data
 
-    sortino_ratio = (expected_return - hourly_risk_free_rate) / downside_std
+    # Adjust reward by volatility (higher volatility reduces the reward)
+    adjusted_reward = dollar_reward / (1 + volatility)  # Dividing by (1 + volatility) to reduce reward as volatility increases
 
-    # Additional logic to encourage trading but allow non-trading in high-risk conditions
-    recent_positions = history["position_index"][-consecutive_non_trade_limit:]
-    if len(np.unique(recent_positions)) == 1 and np.unique(recent_positions)[
-        0] == 0:  # If all recent positions are cash
-        sortino_ratio -= non_trade_penalty
+    return adjusted_reward
 
-    return sortino_ratio
 
 def split_data(df: pd.DataFrame, train_size=0.70, valid_size=0.15, test_size=0.15):
     """
