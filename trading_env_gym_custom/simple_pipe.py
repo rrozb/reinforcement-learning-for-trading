@@ -15,7 +15,7 @@ from stable_baselines3.common.monitor import Monitor
 
 from custom_env import TradingEnv
 from trading_env_gym_custom.features_eng import create_features, split_data, simple_reward, CustomScaler, \
-    split_data_by_dates, absolute_reward
+    split_data_by_dates, absolute_reward, risk_adjusted
 
 print(TradingEnv)
 register(
@@ -176,7 +176,7 @@ def validate_and_roll_train(model_class, data_dir, save_dir, period='W'):
     # Load the best model
     best_model = load_best_model(model_class, save_dir)
     best_model.tensorboard_log = None
-    _, eval_env, test_env = create_envs(train_df, eval_df, test_df, absolute_reward)
+    _, eval_env, test_env = create_envs(train_df, eval_df, test_df, simple_reward)
 
     best_model.set_env(eval_env)
     mean_reward, std_reward = evaluate_policy(best_model,
@@ -218,7 +218,7 @@ def validate_and_roll_train(model_class, data_dir, save_dir, period='W'):
         combined_df = pd.concat([last_week_prev_period, period_df])
 
         # Create environment for the combined data
-        _, _, test_env_period = create_envs(train_df, eval_df, combined_df, absolute_reward)
+        _, _, test_env_period = create_envs(train_df, eval_df, combined_df, simple_reward)
 
         # Set the environment to the current period
         best_model.set_env(test_env_period)
@@ -241,7 +241,7 @@ def validate_and_roll_train(model_class, data_dir, save_dir, period='W'):
         test_env_period.reset()
 
         # Train model on the current period
-        best_model.learn(total_timesteps=len(period_df))
+        best_model.learn(total_timesteps=len(period_df)*5)
 
     print(f"Final Portfolio Value: {portfolio_value}")
     # print(f"Total Compounded Return: {portfolio_value / 1000 - 1}")
@@ -263,7 +263,7 @@ def train_and_save_pipeline(data_dir, save_dir):
 
 
     # Create environments
-    train_env, eval_env, test_env = create_envs(train_df, eval_df, test_df, simple_reward)
+    train_env, eval_env, test_env = create_envs(train_df, eval_df, test_df, risk_adjusted)
 
     base_log_path = f'./tensorboard_logs/{model_class.__name__}/{timestamp}/'
 
@@ -312,10 +312,10 @@ set_seeds(42)
 # process_data("/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h.pkl",
 #              date_indexes=[pd.to_datetime("2022-06-01"), pd.to_datetime("2023-01-01")], granularity='1h')
 
-train_and_save_pipeline(
-    '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h',
-    '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results/BTCUSD_1h')
+# train_and_save_pipeline(
+#     '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h',
+#     '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results/BTCUSD_1h')
 
-# validate_and_roll_train(RecurrentPPO,
-#                         '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h',
-#                         '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results/BTCUSD_1h/run_20240107_115249')
+validate_and_roll_train(RecurrentPPO,
+                        '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h',
+                        '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results/BTCUSD_1h/run_20240107_143406')

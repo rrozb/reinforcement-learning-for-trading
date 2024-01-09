@@ -75,33 +75,46 @@ def simple_reward(history):
     return log_return
     # return (portfolio_valuation[-1] - portfolio_valuation[-2]) / portfolio_valuation[-2]
 
+
+def risk_adjusted(history):
+    portfolio_valuation = history["portfolio_valuation"]
+    data_close = history["data_close"]
+
+    # Ensure there are at least two portfolio valuations to compute a return
+    if len(portfolio_valuation) < 2:
+        return 0
+
+    # Ensure there is enough data to compute the standard deviation
+    if len(data_close) < 3:
+        return 0
+
+    # Calculate the log return between the last two portfolio valuations
+    log_ret = np.log(portfolio_valuation[-1] / portfolio_valuation[-2])
+
+    # Calculate the return prices
+    if len(history["data_close"]) > 24:
+        prices = history["data_close"][-24:]
+    else:
+        prices = history["data_close"]
+
+    # calcualte the return
+    risk = np.log(list(prices[1:] / prices[:-1])).std()
+
+    # Use a small epsilon to avoid division by zero
+    risk = max(risk, 1e-6)
+
+    # Calculate the risk-adjusted return
+    risk_adjusted_return = log_ret / (1+risk)
+
+    return risk_adjusted_return
+
+
 def absolute_reward(history):
     portfolio_valuation = history["portfolio_valuation"]
     if len(portfolio_valuation) < 2:
         return 0
     return portfolio_valuation[-1] - portfolio_valuation[-2]
 
-import numpy as np
-
-def adjusted_reward(history, lookback_period=24):
-    portfolio_valuation = history["portfolio_valuation"]
-    if len(portfolio_valuation) < 2:
-        return 0
-
-    # Calculate dollar reward
-    dollar_reward = portfolio_valuation[-1] - portfolio_valuation[-2]
-
-    # Calculate volatility (standard deviation) of recent portfolio changes
-    if len(portfolio_valuation) > lookback_period:
-        recent_changes = [portfolio_valuation[i] - portfolio_valuation[i - 1] for i in range(-lookback_period, 0)]
-        volatility = np.std(recent_changes)
-    else:
-        volatility = np.std(portfolio_valuation)  # Use whole history if not enough data
-
-    # Adjust reward by volatility (higher volatility reduces the reward)
-    adjusted_reward = dollar_reward / (1 + volatility)  # Dividing by (1 + volatility) to reduce reward as volatility increases
-
-    return adjusted_reward
 
 
 def split_data(df: pd.DataFrame, train_size=0.70, valid_size=0.15, test_size=0.15):
