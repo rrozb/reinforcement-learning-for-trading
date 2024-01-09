@@ -1,5 +1,6 @@
 import os
 import random
+import time
 from datetime import datetime
 
 import gymnasium as gym
@@ -10,12 +11,12 @@ from gymnasium import register
 from sb3_contrib import RecurrentPPO
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import EvalCallback
-from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.monitor import Monitor
 
 from custom_env import TradingEnv
+from trading_env_gym_custom.eval import evaluate_policy
 from trading_env_gym_custom.features_eng import create_features, split_data, simple_reward, CustomScaler, \
-    split_data_by_dates, absolute_reward, risk_adjusted
+    split_data_by_dates, risk_adjusted
 
 print(TradingEnv)
 register(
@@ -179,7 +180,7 @@ def validate_and_roll_train(model_class, data_dir, save_dir, period='W'):
     _, eval_env, test_env = create_envs(train_df, eval_df, test_df, simple_reward)
 
     best_model.set_env(eval_env)
-    mean_reward, std_reward = evaluate_policy(best_model,
+    mean_reward, std_reward, all_infos = evaluate_policy(best_model,
                                               eval_env,
                                               n_eval_episodes=1,
                                               deterministic=True,
@@ -190,14 +191,14 @@ def validate_and_roll_train(model_class, data_dir, save_dir, period='W'):
     best_model.learn(total_timesteps=len(eval_df) * repeat_dataset, )
 
     best_model.set_env(test_env)
-    mean_reward, std_reward = evaluate_policy(best_model,
+    mean_reward, std_reward, all_infos = evaluate_policy(best_model,
                                               eval_env,
                                               n_eval_episodes=1,
                                               deterministic=True,
                                               return_episode_rewards=True)
 
     print(f"Mean reward after fine tuning: {mean_reward} +/- {std_reward}.")
-    mean_reward, std_reward = evaluate_policy(best_model,
+    mean_reward, std_reward, all_infos = evaluate_policy(best_model,
                                               test_env,
                                               n_eval_episodes=1,
                                               deterministic=True,
@@ -205,8 +206,7 @@ def validate_and_roll_train(model_class, data_dir, save_dir, period='W'):
 
     print(f"Test Mean reward after fine tuning: {mean_reward} +/- {std_reward}.")
     portfolio_value = 1000  # Starting portfolio value
-    total_returns = []
-
+    infos_combined = []
     for i in range(1, len(periods)):
         p = periods[i]
         prev_p = periods[i - 1]
@@ -225,14 +225,15 @@ def validate_and_roll_train(model_class, data_dir, save_dir, period='W'):
 
         # Evaluate model on the current period without training
         # period_return = evaluate_model(best_model, test_env_period, save_dir)
-        mean_reward, std_reward = evaluate_policy(best_model,
+        _, _, all_infos = evaluate_policy(best_model,
                                                   test_env_period,
                                                   n_eval_episodes=1,
                                                   deterministic=True,
                                                   return_episode_rewards=True)
-        mean_reward = np.mean(mean_reward)
-        print(f"Mean reward for period {p}: {mean_reward} +/- {std_reward}.")
-        total_returns.append(mean_reward)
+        flattened_infos = [item for sublist in all_infos for item in sublist]
+
+        infos_combined.extend(flattened_infos)
+        mean_reward =  flattened_infos[-1]['portfolio_valuation'] - flattened_infos[0]['portfolio_valuation']
 
         # Update portfolio value
         portfolio_value += mean_reward
@@ -244,6 +245,7 @@ def validate_and_roll_train(model_class, data_dir, save_dir, period='W'):
         best_model.learn(total_timesteps=len(period_df)*5)
 
     print(f"Final Portfolio Value: {portfolio_value}")
+    pd.DataFrame(infos_combined).to_csv(f"/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/evaluations/{model_class.__name__}{time.time()}_infos.csv")
     # print(f"Total Compounded Return: {portfolio_value / 1000 - 1}")
 
 
