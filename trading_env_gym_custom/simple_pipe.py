@@ -16,7 +16,7 @@ from stable_baselines3.common.monitor import Monitor
 from custom_env import TradingEnv
 from trading_env_gym_custom.eval import evaluate_policy
 from trading_env_gym_custom.features_eng import create_features, split_data, simple_reward, CustomScaler, \
-    split_data_by_dates, risk_adjusted
+    split_data_by_dates, risk_adjusted, black_peters_reward
 
 print(TradingEnv)
 register(
@@ -204,49 +204,51 @@ def validate_and_roll_train(model_class, data_dir, save_dir, period='W'):
                                               deterministic=True,
                                               return_episode_rewards=True)
 
-    print(f"Test Mean reward after fine tuning: {mean_reward} +/- {std_reward}.")
-    portfolio_value = 1000  # Starting portfolio value
-    infos_combined = []
-    for i in range(1, len(periods)):
-        p = periods[i]
-        prev_p = periods[i - 1]
-        print(f"Training on period {p}. Portfolio value so far: {portfolio_value}")
+    flattened_infos = [item for sublist in all_infos for item in sublist]
+    pd.DataFrame(flattened_infos).to_csv(f"/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/evaluations/{model_class.__name__}{time.time()}_infos.csv")
+    # print(f"Test Mean reward after fine tuning: {mean_reward} +/- {std_reward}.")
+    # portfolio_value = 1000  # Starting portfolio value
+    # infos_combined = []
+    # for i in range(1, len(periods)):
+    #     p = periods[i]
+    #     prev_p = periods[i - 1]
+    #     print(f"Training on period {p}. Portfolio value so far: {portfolio_value}")
+    #
+    #     # Create a subset of test data for the previous and current period
+    #     last_week_prev_period = test_df[test_df['period'] == prev_p].last('W')
+    #     period_df = test_df[test_df['period'] == p]
+    #     combined_df = pd.concat([last_week_prev_period, period_df])
+    #
+    #     # Create environment for the combined data
+    #     _, _, test_env_period = create_envs(train_df, eval_df, combined_df, simple_reward)
+    #
+    #     # Set the environment to the current period
+    #     best_model.set_env(test_env_period)
+    #
+    #     # Evaluate model on the current period without training
+    #     # period_return = evaluate_model(best_model, test_env_period, save_dir)
+    #     _, _, all_infos = evaluate_policy(best_model,
+    #                                               test_env_period,
+    #                                               n_eval_episodes=1,
+    #                                               deterministic=True,
+    #                                               return_episode_rewards=True)
+    #     flattened_infos = [item for sublist in all_infos for item in sublist]
+    #
+    #     infos_combined.extend(flattened_infos)
+    #     mean_reward =  flattened_infos[-1]['portfolio_valuation'] - flattened_infos[0]['portfolio_valuation']
+    #
+    #     # Update portfolio value
+    #     portfolio_value += mean_reward
+    #
+    #     # Reset the environment state if necessary before training
+    #     test_env_period.reset()
+    #
+    #     # Train model on the current period
+    #     best_model.learn(total_timesteps=len(period_df)*1)
+    #
+    # print(f"Final Portfolio Value: {portfolio_value}")
+    # pd.DataFrame(infos_combined).to_csv(f"/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/evaluations/{model_class.__name__}{time.time()}_infos.csv")
 
-        # Create a subset of test data for the previous and current period
-        last_week_prev_period = test_df[test_df['period'] == prev_p].last('W')
-        period_df = test_df[test_df['period'] == p]
-        combined_df = pd.concat([last_week_prev_period, period_df])
-
-        # Create environment for the combined data
-        _, _, test_env_period = create_envs(train_df, eval_df, combined_df, simple_reward)
-
-        # Set the environment to the current period
-        best_model.set_env(test_env_period)
-
-        # Evaluate model on the current period without training
-        # period_return = evaluate_model(best_model, test_env_period, save_dir)
-        _, _, all_infos = evaluate_policy(best_model,
-                                                  test_env_period,
-                                                  n_eval_episodes=1,
-                                                  deterministic=True,
-                                                  return_episode_rewards=True)
-        flattened_infos = [item for sublist in all_infos for item in sublist]
-
-        infos_combined.extend(flattened_infos)
-        mean_reward =  flattened_infos[-1]['portfolio_valuation'] - flattened_infos[0]['portfolio_valuation']
-
-        # Update portfolio value
-        portfolio_value += mean_reward
-
-        # Reset the environment state if necessary before training
-        test_env_period.reset()
-
-        # Train model on the current period
-        best_model.learn(total_timesteps=len(period_df)*5)
-
-    print(f"Final Portfolio Value: {portfolio_value}")
-    pd.DataFrame(infos_combined).to_csv(f"/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/evaluations/{model_class.__name__}{time.time()}_infos.csv")
-    # print(f"Total Compounded Return: {portfolio_value / 1000 - 1}")
 
 
 def train_and_save_pipeline(data_dir, save_dir):
@@ -265,7 +267,7 @@ def train_and_save_pipeline(data_dir, save_dir):
 
 
     # Create environments
-    train_env, eval_env, test_env = create_envs(train_df, eval_df, test_df, risk_adjusted)
+    train_env, eval_env, test_env = create_envs(train_df, eval_df, test_df, black_peters_reward)
 
     base_log_path = f'./tensorboard_logs/{model_class.__name__}/{timestamp}/'
 
@@ -314,10 +316,10 @@ set_seeds(42)
 # process_data("/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h.pkl",
 #              date_indexes=[pd.to_datetime("2022-06-01"), pd.to_datetime("2023-01-01")], granularity='1h')
 
-# train_and_save_pipeline(
-#     '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h',
-#     '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results/BTCUSD_1h')
+train_and_save_pipeline(
+    '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h',
+    '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results/BTCUSD_1h')
 
-validate_and_roll_train(RecurrentPPO,
-                        '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h',
-                        '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results/BTCUSD_1h/run_20240107_143406')
+# validate_and_roll_train(RecurrentPPO,
+#                         '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/data/bitfinex2-BTCUSD-1h',
+#                         '/home/rr/Documents/Coding/Work/crypto/reinforcement-learning-for-trading/trading_env_gym_custom/training_results/BTCUSD_1h/run_20240107_143406')

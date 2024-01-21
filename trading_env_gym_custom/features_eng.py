@@ -76,6 +76,40 @@ def simple_reward(history):
     # return (portfolio_valuation[-1] - portfolio_valuation[-2]) / portfolio_valuation[-2]
 
 
+def length_of_position(history):
+    # starting from last element of array, look at previous elements until you find element that is different.
+    # return the length of the array from the last element to the element that is different.
+
+    diff = np.diff(history["position_index"])
+    # start from the last element of the array
+
+    #
+    for i in range(1, len(diff)+1, 1):
+        if diff[-i] != 0:
+            return i
+    return 1
+
+
+def black_peters_reward(history):
+    portfolio_valuation = history["portfolio_valuation"]
+    if len(portfolio_valuation) < 2:
+        return 0
+    # Calculate the log return
+    log_return = np.log(portfolio_valuation[-1] / portfolio_valuation[-2])
+    constant = np.log(1.01)
+    if history["position"][-1] == 0:
+        return log_return
+    len_position = length_of_position(history)
+    len_position_divided = len_position / 8
+    sign = np.sign(log_return)
+
+    if abs(log_return) < constant:
+        return sign * abs(log_return) ** len_position_divided
+    else:
+        return log_return
+
+
+
 def risk_adjusted(history):
     portfolio_valuation = history["portfolio_valuation"]
     data_close = history["data_close"]
@@ -219,3 +253,5 @@ class CustomScaler:
 
     def load(self, filename):
         self.scaler = joblib.load(filename)
+
+
